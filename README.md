@@ -45,7 +45,7 @@ You will soon be able to read more about the evaluation in our paper. ([Master's
 | 🥉 SentSim    | 0.392       | 0.389        |
 | SRL        | 0.393       | 0.377        |
 | NER        | 0.252       | 0.259        |
-| QGQA       | 0.252       | 0.258        |
+| QGQA       | 0.228       | 0.258        |
 | OpenIE     | 0.169       | 0.185        |
 
 ## Dependencies 🔗
