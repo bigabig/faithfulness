@@ -15,7 +15,7 @@ This library includes multiple faithfulness metrics based on:
 
 1. `$ conda create -n my_project python=3.8` This creates a new virtual environment for your project with conda. You can activate it with `$ conda activate my_project`.
 2. `$ conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 cudatoolkit=10.1 -c pytorch` Please install PyTorch by following the instructions [here](https://pytorch.org/get-started/locally/). Make sure to install the CUDA variant that matches the CUDA version of your GPU. 
-3. `$ pip install faithfulness` This installs the faithfulness library and it's dependencies. Read more about the dependencies [below](#user-content-dependencies).
+3. `$ pip install faithfulness` This installs the faithfulness library and it's dependencies. Read more about the dependencies [below](#dependencies-).
 
 All faithfulness metrics are model-based. Some models have to be installed manually:
 - Download the SRL model [here](https://storage.googleapis.com/allennlp-public-models/structured-prediction-srl-bert.2020.12.15.tar.gz) and save it in your project. e.g. __/models/srl_model.tar.gz__
@@ -45,7 +45,7 @@ You will soon be able to read more about the evaluation in our paper. ([Master's
 | 🥉 SentSim    | 0.392       | 0.389        |
 | SRL        | 0.393       | 0.377        |
 | NER        | 0.252       | 0.259        |
-| QGQA       | 0.252       | 0.258        |
+| QGQA       | 0.228       | 0.258        |
 | OpenIE     | 0.169       | 0.185        |
 
 ## Dependencies 🔗
