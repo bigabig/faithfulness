@@ -1,5 +1,5 @@
 from typing import List
-from faithfulness.similarity.SimilarityMetricInterface import SimilarityMetricInterface
+from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from faithfulness.utils.utils import calc_prf1
 from sentence_transformers import util
 from sentence_transformers import SentenceTransformer
@@ -16,7 +16,7 @@ class SentCos(SimilarityMetricInterface):
     def score(self, summary_text: str, source_text: str):
         summary_embeddings = self.model.encode([summary_text], convert_to_tensor=True, device=self.device)
         source_embeddings = self.model.encode([source_text], convert_to_tensor=True, device=self.device)
-        return self.__calc_sent_sim(source_embeddings, summary_embeddings)[2]  # returns f1
+        return self.__calc_sent_sim(source_embeddings, summary_embeddings)  # returns f1 (but prf1 all are the same actually)
 
     def score_batch(self, summaries: List[str], sources: List[str]):
         assert len(summaries) == len(sources)
@@ -25,8 +25,7 @@ class SentCos(SimilarityMetricInterface):
         sources_embeddings = self.model.encode(sources, convert_to_tensor=True, device=self.device)
 
         # compare summary and source pairwise
-        # returns just f1 [2]
-        return [self.__calc_sent_sim(summary_embeddings, source_embeddings)[2] for summary_embeddings, source_embeddings in zip(summaries_embeddings, sources_embeddings)]
+        return [self.__calc_sent_sim(summary_embeddings, source_embeddings) for summary_embeddings, source_embeddings in zip(summaries_embeddings, sources_embeddings)]
 
     def align_and_score(self, summary_texts: List[str], source_texts: List[str]):
         summary_embeddings = self.model.encode(summary_texts, convert_to_tensor=True, device=self.device)
@@ -47,4 +46,4 @@ class SentCos(SimilarityMetricInterface):
     @staticmethod
     def __calc_sent_sim(summary_embeddings, source_embeddings):
         similarities = util.pytorch_cos_sim(summary_embeddings, source_embeddings)
-        return calc_prf1(similarities)
+        return similarities.max(dim=1).values.mean()  # this is precision, but recall and f1 are the same anyway

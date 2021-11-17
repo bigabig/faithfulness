@@ -1,7 +1,8 @@
 from typing import List
+from faithfulness.interfaces.MetricInterface import MetricInterface
 
 
-class SimilarityMetricInterface:
+class SimilarityMetricInterface(MetricInterface):
     """Compares two texts"""
 
     def score(self, summary_text: str, source_text: str):

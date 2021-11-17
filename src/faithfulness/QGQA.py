@@ -1,13 +1,17 @@
+from typing import List
+
 import spacy
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, T5ForConditionalGeneration, pipeline
+
+from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.similarity.F1 import F1
-from faithfulness.similarity.SimilarityMetricInterface import SimilarityMetricInterface
+from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from faithfulness.utils.Datasets import QGDataset
 
 
-class QGQA:
+class QGQA(MetricInterface):
 
     def __init__(self, metric: SimilarityMetricInterface = F1(), qamodelname='deepset/roberta-large-squad2', qgmodelname='valhalla/t5-base-qg-hl', spacymodel='en_core_web_lg'):
         self.metric = metric
@@ -33,6 +37,21 @@ class QGQA:
 
         # todo: multiple answer similarities?
         # todo: select if questions should be generated based on summary or source
+
+    def score(self, summary, source):
+        answers_candidates = self.__extract_answer_candidates(summary)
+        questions, question_scores, answers = self.__generate_questions(summary, answers_candidates)
+        filtered_questions = self.__filter_questions(summary, questions, question_scores, answers)
+
+        if len(filtered_questions) == 0:
+            return 1.0  # we assume the summary is faithful, if there are no questions
+
+        answered_questions = self.__answer_questions(filtered_questions, source)
+
+        return self.__compute_score(answered_questions)
+
+    def score_batch(self, summaries: List[str], sources: List[str]):
+        pass
 
     def __extract_answer_candidates(self, text):
         answer_candidates = {}
@@ -175,14 +194,3 @@ class QGQA:
 
         return scores.mean().item(), answered_questions
 
-    def score(self, summary, source):
-        answers_candidates = self.__extract_answer_candidates(summary)
-        questions, question_scores, answers = self.__generate_questions(summary, answers_candidates)
-        filtered_questions = self.__filter_questions(summary, questions, question_scores, answers)
-
-        if len(filtered_questions) == 0:
-            return 1.0  # we assume the summary is faithful, if there are no questions
-
-        answered_questions = self.__answer_questions(filtered_questions, source)
-
-        return self.__compute_score(answered_questions)

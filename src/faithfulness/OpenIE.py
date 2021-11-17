@@ -1,12 +1,16 @@
+from typing import List
+
 import torch
 from sentence_transformers import SentenceTransformer, util
 from sklearn.cluster import DBSCAN
 from stanza.server import CoreNLPClient
 import numpy as np
-from faithfulness.similarity.SimilarityMetricInterface import SimilarityMetricInterface
+
+from faithfulness.interfaces.MetricInterface import MetricInterface
+from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 
 
-class OpenIE:
+class OpenIE(MetricInterface):
 
     def __init__(self, metric: SimilarityMetricInterface, modelname: str = "paraphrase-mpnet-base-v2"):
         self.metric = metric
@@ -25,7 +29,7 @@ class OpenIE:
         self.model = SentenceTransformer(modelname)
         self.model.to(self.device)
 
-    def eval(self, summary_text, source_text):
+    def score(self, summary_text: str, source_text: str):
         summary_triples = self.__get_triples(summary_text)  # [{'S': ..., 'R': ..., 'O': ...}, ...]
         source_triples = self.__get_triples(source_text)
 
@@ -40,6 +44,9 @@ class OpenIE:
         # source_triples = [triple[1] for triple in source_triples]
 
         return self.metric.align_and_score(summary_triple_sentences, source_triple_sentences)
+
+    def score_batch(self, summaries: List[str], sources: List[str]):
+        pass
 
     def __get_triples(self, text):
         # annotate the data

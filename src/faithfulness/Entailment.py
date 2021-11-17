@@ -1,7 +1,11 @@
+from typing import List
+
 import spacy
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from torch.utils.data import DataLoader
+
+from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.utils.Datasets import SimpleDataset
 import torch.nn.functional as F
 from enum import Enum
@@ -12,7 +16,7 @@ class EntailmentMethod(Enum):
     DOC = 2,
 
 
-class Entailment:
+class Entailment(MetricInterface):
 
     def __init__(self, method=EntailmentMethod.SENT, modelname='roberta-large-mnli', spacymodel='en_core_web_lg'):
 
@@ -34,12 +38,15 @@ class Entailment:
         self.num_labels = model.config._num_labels
         self.entailment_id = model.config.label2id["ENTAILMENT"]
 
-    def eval(self, summary, source):
+    def score(self, summary_text: str, source_text: str):
         if self.method == EntailmentMethod.SENT:
-            return self.__sentencewise_entailment(summary, source)
+            return self.__sentencewise_entailment(summary_text, source_text)
 
         if self.method == EntailmentMethod.DOC:
-            return self.__documentwise_entailment(summary, source)
+            return self.__documentwise_entailment(summary_text, source_text)
+
+    def score_batch(self, summaries: List[str], sources: List[str]):
+        pass
 
     def __split_sentences(self, text):
         if self.method != EntailmentMethod.SENT:

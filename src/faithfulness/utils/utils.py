@@ -1,5 +1,12 @@
 import re
 import string
+from enum import Enum
+
+
+class MetricVariant(Enum):
+    PRECISION = 0
+    RECALL = 1
+    F1 = 2
 
 
 def calc_prf1(similarity_matrix):

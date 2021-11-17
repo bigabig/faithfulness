@@ -2,10 +2,12 @@ from typing import List
 import spacy
 import torch
 from allennlp.predictors.predictor import Predictor
-from faithfulness.similarity.SimilarityMetricInterface import SimilarityMetricInterface
+
+from faithfulness.interfaces.MetricInterface import MetricInterface
+from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 
 
-class SRL:
+class SRL(MetricInterface):
 
     def __init__(self, metric: SimilarityMetricInterface, srl_model_path="models/structured-prediction-srl-bert.2020.12.15.tar.gz", spacymodel='en_core_web_lg'):
         print(f'Loading Spacy model {spacymodel}...')
@@ -16,7 +18,7 @@ class SRL:
         device = 0 if torch.cuda.is_available() else -1
         self.model = Predictor.from_path(srl_model_path, cuda_device=device)
 
-    def eval(self, summary_text: str, source_text: str):
+    def score(self, summary_text: str, source_text: str):
         summary_sentences = self.__split_sentences(summary_text)
         source_sentences = self.__split_sentences(source_text)
 
@@ -37,6 +39,9 @@ class SRL:
             return sum(result) / len(result)
         else:
             return 0.0
+
+    def score_batch(self, summaries: List[str], sources: List[str]):
+        pass
 
     def __split_sentences(self, text: str) -> List[str]:
         return [x.text for x in self.nlp(text).sents]

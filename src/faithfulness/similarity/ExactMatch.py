@@ -1,6 +1,6 @@
 from typing import List
 import torch
-from faithfulness.similarity.SimilarityMetricInterface import SimilarityMetricInterface
+from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from faithfulness.utils.utils import normalize_text, calc_prf1
 
 

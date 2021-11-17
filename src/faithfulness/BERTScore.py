@@ -2,14 +2,14 @@ from typing import List
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, AutoModel
-from faithfulness.similarity.SimilarityMetricInterface import SimilarityMetricInterface
+from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from faithfulness.utils.Datasets import SimpleDataset
-from faithfulness.utils.utils import calc_prf1
+from faithfulness.utils.utils import calc_prf1, MetricVariant
 
 
 class BERTScore(SimilarityMetricInterface):
 
-    def __init__(self, modelname="roberta-large-mnli", layer=8):
+    def __init__(self, modelname="roberta-large-mnli", layer=8, variant=MetricVariant.F1):
 
         print(f"Init BERTScore model {modelname}...")
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -22,6 +22,7 @@ class BERTScore(SimilarityMetricInterface):
         self.layer = layer
         self.device = device
         self.batch_size = 8
+        self.variant = variant
 
     def score(self, summary_text: str, source_text: str):
         # embed summary & source
@@ -29,7 +30,7 @@ class BERTScore(SimilarityMetricInterface):
         source_embeddings, source_tokens = self.__embed(source_text)
 
         # calculate bertscore
-        return self.__calc_bertscore(summary_embeddings, source_embeddings)[2]  # returns f1
+        return self.__calc_bertscore(summary_embeddings, source_embeddings)[self.variant.value]  # returns f1
 
     @staticmethod
     def __calc_bertscore(summary_embeddings, source_embeddings):
@@ -98,7 +99,7 @@ class BERTScore(SimilarityMetricInterface):
         # calculate a bertscore similarity matrix
         # that compares every summary and source <sentence, phrase, text...>
         similarities = torch.tensor(
-            [[self.__calc_bertscore(summary_embeddings, source_embeddings)[2]  # use f1 bertscore
+            [[self.__calc_bertscore(summary_embeddings, source_embeddings)[self.variant.value]  # use f1 bertscore
               for source_embeddings in sources_embeddings]
              for summary_embeddings in summaries_embeddings])
 

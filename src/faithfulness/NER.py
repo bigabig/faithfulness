@@ -1,21 +1,28 @@
+from typing import List
+
 import spacy
 import numpy as np
-from faithfulness.similarity.SimilarityMetricInterface import SimilarityMetricInterface
+
+from faithfulness.interfaces.MetricInterface import MetricInterface
+from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 
 
-class NER:
+class NER(MetricInterface):
 
     def __init__(self, metric: SimilarityMetricInterface, spacymodel='en_core_web_lg'):
         print(f'Loading Spacy model {spacymodel}...')
         self.nlp = spacy.load(spacymodel)
         self.metric = metric
 
-    def eval(self, summary_text, source_text):
+    def score(self, summary_text: str, source_text: str):
         # extract entities
         summary_entities = self.__extract_entities(summary_text)
         source_entities = self.__extract_entities(source_text)
 
         return self.__calc_score(summary_entities, source_entities)
+
+    def score_batch(self, summaries: List[str], sources: List[str]):
+        pass
 
     def __extract_entities(self, text):
         temp = self.nlp(text)
