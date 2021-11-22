@@ -12,6 +12,22 @@ class SimpleDataset(Dataset):
         return self.data[idx]
 
 
+class SummarizationDataset(Dataset):
+    def __init__(self, summaries, sources):
+        self.summaries = summaries
+        self.sources = sources
+        assert len(summaries) == len(sources)
+
+    def __len__(self):
+        return len(self.summaries)
+
+    def __getitem__(self, idx):
+        return {
+            "summaries": self.summaries[idx],
+            "sources": self.sources[idx]
+        }
+
+
 class QGDataset(Dataset):
     def __init__(self, sentences, answers):
         self.sentences = sentences

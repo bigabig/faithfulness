@@ -4,15 +4,21 @@ from enum import Enum
 
 
 class MetricVariant(Enum):
-    PRECISION = 0
-    RECALL = 1
-    F1 = 2
+    PRECISION = "precision"
+    RECALL = "recall"
+    F1 = "f1"
 
 
-def calc_prf1(similarity_matrix):
+def calc_prf1(similarity_matrix, named=False):
     precision = similarity_matrix.max(dim=1).values.mean()
     recall = similarity_matrix.max(dim=0).values.mean()
     f1 = 2 * ((precision * recall) / (precision + recall))
+    if named:
+        return {
+            "precision": precision.item(),
+            "recall": recall.item(),
+            "f1": f1.item()
+        }
     return precision.item(), recall.item(), f1.item()
 
 

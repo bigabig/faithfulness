@@ -4,6 +4,7 @@ import spacy
 
 from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
+from tqdm import tqdm
 
 
 class SentSim(MetricInterface):
@@ -21,7 +22,10 @@ class SentSim(MetricInterface):
         return self.metric.align_and_score(summary_sentences, source_sentences)
 
     def score_batch(self, summaries: List[str], sources: List[str]):
-        pass
+        return [
+            self.score(summary, source)
+            for (summary, source) in tqdm(zip(summaries, sources))
+        ]
 
     def __split_sentences(self, text):
         return [x.text for x in self.nlp(text).sents]

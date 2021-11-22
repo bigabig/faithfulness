@@ -9,6 +9,7 @@ from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.utils.Datasets import SimpleDataset
 import torch.nn.functional as F
 from enum import Enum
+from tqdm import tqdm
 
 
 class EntailmentMethod(Enum):
@@ -41,12 +42,14 @@ class Entailment(MetricInterface):
     def score(self, summary_text: str, source_text: str):
         if self.method == EntailmentMethod.SENT:
             return self.__sentencewise_entailment(summary_text, source_text)
-
         if self.method == EntailmentMethod.DOC:
             return self.__documentwise_entailment(summary_text, source_text)
 
     def score_batch(self, summaries: List[str], sources: List[str]):
-        pass
+        return [
+            self.score(summary, source)
+            for (summary, source) in tqdm(zip(summaries, sources))
+        ]
 
     def __split_sentences(self, text):
         if self.method != EntailmentMethod.SENT:
