@@ -18,7 +18,15 @@ class BERTScoreMethod(Enum):
 
 class BERTScore(SimilarityMetricInterface):
 
-    def __init__(self, modelname="roberta-large-mnli", layer=8, variant=MetricVariant.F1, method=BERTScoreMethod.DOC):
+    def __init__(self, modelname="roberta-large-mnli", layer=8, variant=MetricVariant.F1, method=BERTScoreMethod.DOC, batch_size=2):
+        """
+        Evaluate summaries and sources using BERTScore
+        :param modelname: this model calculates token embeddings
+        :param layer: this layer's embeddings are used as token embeddings
+        :param variant: calculate BERTScore Precision, Recall or F1
+        :param method: calculate BERTScore for whole documents (truncated if longer than the model's max input length) or per sentence (truncated if sentence is longer than the model's max inmput length). Does NOT affect align_and_score().
+        :param batch_size: when using score_batch, how many documents / sentences should be processed in parallel (depends on your GPU)
+        """
 
         print(f"Init BERTScore model {modelname}...")
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -33,6 +41,10 @@ class BERTScore(SimilarityMetricInterface):
         self.batch_size = 8
         self.variant = variant
         self.method = method
+        self.batch_size = batch_size
+
+    def get_variant(self) -> MetricVariant:
+        return self.variant
 
     def score(self, summary: Union[str, List[str]], source: Union[str, List[str]], additional_output: bool):
         """
@@ -187,6 +199,9 @@ class BERTScore(SimilarityMetricInterface):
         :param source_texts: other list of texts, phrases, sentences to be compared, aligned and scored
         :return: [precision, recall, f1, summary_source_alignment, similarities]
         """
+        if len(summary_texts) == 0 or len(source_texts) == 0:
+            return {"precision": 0.0, "recall": 0.0, "f1": 0.0, "alignment": [], "similarities": []}
+
         summaries_embeddings, summaries_tokens = self.__embed_batch(summary_texts)
         sources_embeddings, sources_tokens = self.__embed_batch(source_texts)
 
@@ -201,7 +216,13 @@ class BERTScore(SimilarityMetricInterface):
         # source_summary_alignment = similarities.argmax(dim=0).tolist()
         precision, recall, f1 = calc_prf1(similarities)
 
-        return precision, recall, f1, summary_source_alignment, similarities.tolist()
+        return {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "alignment": summary_source_alignment,
+            "similarities": similarities.tolist()
+        }
 
     def __calc_bertscore(self, summary_embeddings: Tensor, source_embeddings: Tensor, additional_output: bool):
         """
@@ -253,7 +274,7 @@ class BERTScore(SimilarityMetricInterface):
         :return: List of 2D Tensors [if group_by_text=True] or 2D Tensor [else]
         """
         # construct dataset
-        dataloader = DataLoader(SimpleDataset(texts), batch_size=2, shuffle=False)
+        dataloader = DataLoader(SimpleDataset(texts), batch_size=self.batch_size, shuffle=False)
 
         all_tokens = []
         all_token_embeddings = []
@@ -285,7 +306,7 @@ class BERTScore(SimilarityMetricInterface):
         :return: a list of 2D tensors. A tensor represents token embeddings of a summary. There is one tensor per summary id in ids. (Output is grouped by id)
         """
         # construct dataset
-        dataloader = DataLoader(SimpleDataset([{"text": text, "id": idx} for text, idx in zip(texts, ids)]), batch_size=2, shuffle=False)
+        dataloader = DataLoader(SimpleDataset([{"text": text, "id": idx} for text, idx in zip(texts, ids)]), batch_size=self.batch_size, shuffle=False)
 
         all_tokens = {}
         all_token_embeddings = {}

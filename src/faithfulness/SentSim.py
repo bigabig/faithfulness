@@ -1,32 +1,26 @@
 from typing import List
-
-import spacy
-
 from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from tqdm import tqdm
 
+from faithfulness.utils.utils import MetricVariant
+
 
 class SentSim(MetricInterface):
-
-    def __init__(self, metric: SimilarityMetricInterface, spacymodel='en_core_web_lg'):
-        print(f'Loading Spacy model {spacymodel}...')
-        self.nlp = spacy.load(spacymodel)
+    def __init__(self, metric: SimilarityMetricInterface, variant=MetricVariant.F1):
         self.metric = metric
+        self.variant = variant
 
-    def score(self, summary_text: str, source_text: str):
-        # split sentences
-        summary_sentences = self.__split_sentences(summary_text)
-        source_sentences = self.__split_sentences(source_text)
+    def score(self, summary_sentences: List[str], source_sentences: List[str], additional_output: bool):
+        result = self.metric.align_and_score(summary_sentences, source_sentences)
+        if additional_output:
+            return result
+        return {self.variant.value: result[self.variant.value]}
 
-        return self.metric.align_and_score(summary_sentences, source_sentences)
-
-    def score_batch(self, summaries: List[str], sources: List[str]):
-        return [
-            self.score(summary, source)
-            for (summary, source) in tqdm(zip(summaries, sources))
-        ]
-
-    def __split_sentences(self, text):
-        return [x.text for x in self.nlp(text).sents]
-
+    def score_batch(self, summaries_sentences: List[List[str]], sources_sentences: List[List[str]], additional_output: bool):
+        results = {}
+        for summary_sentence, source_sentence in tqdm(zip(summaries_sentences, sources_sentences),  desc="Calculating SentSim..."):
+            result = self.score(summary_sentence, source_sentence, additional_output)
+            for key, value in result.items():
+                results[key] = [*results.get(key, []), value]
+        return results

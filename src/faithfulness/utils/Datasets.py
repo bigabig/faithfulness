@@ -28,6 +28,22 @@ class SummarizationDataset(Dataset):
         }
 
 
+class QADataset(Dataset):
+    def __init__(self, questions, contexts):
+        self.question = questions
+        self.context = contexts
+        assert len(questions) == len(contexts)
+
+    def __len__(self):
+        return len(self.question)
+
+    def __getitem__(self, idx):
+        return {
+            "question": self.question[idx],
+            "context": self.context[idx]
+        }
+
+
 class QGDataset(Dataset):
     def __init__(self, sentences, answers):
         self.sentences = sentences

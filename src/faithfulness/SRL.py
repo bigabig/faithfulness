@@ -1,52 +1,109 @@
-from typing import List
-import spacy
+from typing import List, Type
 import torch
 from allennlp.predictors.predictor import Predictor
-
 from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
+from faithfulness.utils.utils import load_data, save_data, MetricVariant
+from tqdm import tqdm
 
 
 class SRL(MetricInterface):
 
-    def __init__(self, metric: SimilarityMetricInterface, srl_model_path="models/structured-prediction-srl-bert.2020.12.15.tar.gz", spacymodel='en_core_web_lg'):
-        print(f'Loading Spacy model {spacymodel}...')
-        self.nlp = spacy.load(spacymodel)
-        self.metric = metric
+    def __init__(self, metric: Type[SimilarityMetricInterface], metric_args=None, model_path="models/structured-prediction-srl-bert.2020.12.15.tar.gz", variant=MetricVariant.F1, batch_mode=False, save_path=""):
+        self.metric_type = metric
+        self.metric_args = metric_args if metric_args is not None else {}
+        self.device = 0 if torch.cuda.is_available() else -1
+        self.save_path = save_path
+        self.model_path = model_path
+        self.variant = variant
+        self.batch_mode = batch_mode
 
-        print(f"Loading semantic role labeling model ...")
-        device = 0 if torch.cuda.is_available() else -1
-        self.model = Predictor.from_path(srl_model_path, cuda_device=device)
+        self.metric = None
+        self.model = None
+        if not self.batch_mode:
+            self.__load_srl_model()
+            self.__load_metric()
 
-    def score(self, summary_text: str, source_text: str):
-        summary_sentences = self.__split_sentences(summary_text)
-        source_sentences = self.__split_sentences(source_text)
+    def score(self, summary_sentences: List[str], source_sentences: List[str], additional_output: bool):
+        if self.batch_mode:
+            print("ERROR: Please set batch_mode to False, to use this method")
+            exit()
 
         summary_phrases = self.__get_phrases(summary_sentences)
         source_phrases = self.__get_phrases(source_sentences)
+        return self.__calc_score(summary_phrases, source_phrases, additional_output)
 
+    def score_batch(self, summaries: List[List[str]], sources: List[List[str]], additional_output: bool):
+        if not self.batch_mode:
+            print("ERROR: Please set batch_mode to True, to use this method")
+            exit()
+
+        summaries_phrases = load_data(self.save_path + "_summaries_phrases.pkl")
+        if len(summaries_phrases) == 0:
+            self.__load_srl_model()
+            for summary_sentences in tqdm(summaries, desc="Extracting summary phrases..."):
+                summaries_phrases.append(self.__get_phrases(summary_sentences))
+            save_data(summaries_phrases, self.save_path + "_summaries_phrases.pkl")
+
+        sources_phrases = load_data(self.save_path + "_sources_phrases.pkl")
+        if len(sources_phrases) == 0:
+            self.__load_srl_model()
+            for sources_sentences in tqdm(sources, desc="Extracting source phrases..."):
+                sources_phrases.append(self.__get_phrases(sources_sentences))
+            save_data(sources_phrases, self.save_path + "_sources_phrases.pkl")
+
+        results = {}
+        self.__load_metric()
+        for summary_phrases, source_phrases in tqdm(zip(summaries_phrases, sources_phrases), desc="Calculating scores..."):
+            result = self.__calc_score(summary_phrases, source_phrases, additional_output)
+            for key, value in result.items():
+                results[key] = [*results.get(key, []), value]
+
+        return results
+
+    def __calc_score(self, summary_phrases: dict, source_phrases: dict, additional_output: bool):
         # Find common and missing tags
         common_tags = set.intersection(set(summary_phrases.keys()), set(source_phrases.keys()))
-        missing_tags = set(summary_phrases).difference(set(source_phrases))
+        missing_tags = set(summary_phrases.keys()).difference(set(source_phrases))
 
-        # todo: maybe also return precision, recall and alignment
-        result = [self.metric.align_and_score([argument['phrase'] for argument in summary_phrases[tag]],
-                                              [argument['phrase'] for argument in source_phrases[tag]])[2]  # we use f1[0] (we also get precision, recall, alignment and similarities as result)
-                  for tag in common_tags]
-        result.extend([0.0 for _ in missing_tags])
+        results = {}
+        for tag in common_tags:
+            result = self.metric.align_and_score([argument['phrase'] for argument in summary_phrases[tag]], [argument['phrase'] for argument in source_phrases[tag]])
+            result["alignment"] = (tag, result["alignment"])
+            result["similarities"] = (tag, result["similarities"])
+            for key, value in result.items():
+                results[key] = [*results.get(key, []), value]
 
-        if len(result) > 0:
-            return sum(result) / len(result)
+        for _ in missing_tags:
+            result = {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0
+            }
+            for key, value in result.items():
+                results[key] = [*results.get(key, []), value]
+
+        # average scores
+        if len(results) > 0:
+            for score_label in ["precision", "recall", "f1"]:
+                results[score_label] = sum(results[score_label]) / len(results[score_label])
         else:
-            return 0.0
+            results = {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "alignment": [],
+                "similarities": [],
+            }
 
-    def score_batch(self, summaries: List[str], sources: List[str]):
-        pass
+        if additional_output:
+            results["summary_phrases"] = summary_phrases
+            results["source_phrases"] = source_phrases
+            return results
+        else:
+            return {self.variant.value: results[self.variant.value]}
 
-    def __split_sentences(self, text: str) -> List[str]:
-        return [x.text for x in self.nlp(text).sents]
-
-    def __get_phrases(self, sentences):
+    def __get_phrases(self, sentences: List[str]):
         # Predict frames
         sentences = [{"sentence": sentence} for sentence in sentences]
         predictions = self.model.predict_batch_json(sentences)
@@ -208,3 +265,12 @@ class SRL(MetricInterface):
         if len(whens) > 0:
             result['whens'] = whens
         return result
+
+    def __load_srl_model(self):
+        if self.model is None:
+            print(f"Loading semantic role labeling model ...")
+            self.model = Predictor.from_path(self.model_path, cuda_device=self.device)
+
+    def __load_metric(self):
+        if self.metric is None:
+            self.metric = self.metric_type(*self.metric_args)

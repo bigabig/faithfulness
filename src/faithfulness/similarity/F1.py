@@ -2,17 +2,24 @@ from typing import List
 from collections import Counter
 import torch
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
-from faithfulness.utils.utils import normalize_text, calc_prf1
+from faithfulness.utils.utils import normalize_text, calc_prf1, MetricVariant
 
 
 class F1(SimilarityMetricInterface):
-    def score(self, summary_text: str, source_text: str):
-        return self.f1_score(summary_text, source_text)
 
-    def score_batch(self, summaries: List[str], sources: List[str]):
-        return [self.f1_score(summary, source) for summary, source in zip(summaries, sources)]
+    def get_variant(self) -> MetricVariant:
+        return MetricVariant.F1
+
+    def score(self, summary_text: str, source_text: str, additional_output: bool):
+        return {"f1": self.f1_score(summary_text, source_text)}
+
+    def score_batch(self, summaries: List[str], sources: List[str], additional_output):
+        return {"f1": [self.f1_score(summary, source) for summary, source in zip(summaries, sources)]}
 
     def align_and_score(self, summary_texts: List[str], source_texts: List[str]):
+        if len(summary_texts) == 0 or len(source_texts) == 0:
+            return {"precision": 0.0, "recall": 0.0, "f1": 0.0, "alignment": [], "similarities": []}
+
         # normalize texts
         summary_texts = [self.__get_tokens(x) for x in summary_texts]
         source_texts = [self.__get_tokens(x) for x in source_texts]
@@ -28,7 +35,13 @@ class F1(SimilarityMetricInterface):
         # compute scores
         precision, recall, f1 = calc_prf1(similarities)
 
-        return precision, recall, f1, summary_source_alignment, similarities.tolist()
+        return {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "alignment": summary_source_alignment,
+            "similarities": similarities.tolist()
+        }
 
     @staticmethod
     def __get_tokens(s):
@@ -48,10 +61,13 @@ class F1(SimilarityMetricInterface):
         num_same = sum(common.values())
         if len(gold_toks) == 0 or len(pred_toks) == 0:
             # If either is no-answer, then F1 is 1 if they agree, 0 otherwise
-            return int(gold_toks == pred_toks)
+            return float(gold_toks == pred_toks)
         if num_same == 0:
-            return 0
+            return 0.0
         precision = 1.0 * num_same / len(pred_toks)
         recall = 1.0 * num_same / len(gold_toks)
-        f1 = (2 * precision * recall) / (precision + recall)
+        if (precision + recall) > 0.0:
+            f1 = 2.0 * ((precision * recall) / (precision + recall))
+        else:
+            f1 = 0.0
         return f1

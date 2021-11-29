@@ -1,5 +1,6 @@
 from typing import List
 from faithfulness.interfaces.MetricInterface import MetricInterface
+from faithfulness.utils.utils import MetricVariant
 
 
 class SimilarityMetricInterface(MetricInterface):
@@ -15,4 +16,8 @@ class SimilarityMetricInterface(MetricInterface):
 
     def align_and_score(self, summary_texts: List[str], source_texts: List[str]):
         """Compares and aligns phrases / answers / entities that occur in two texts"""
+        raise NotImplementedError
+
+    def get_variant(self) -> MetricVariant:
+        """Returns the metric variant"""
         raise NotImplementedError

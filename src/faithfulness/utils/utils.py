@@ -1,3 +1,4 @@
+import pickle
 import re
 import string
 from enum import Enum
@@ -10,16 +11,19 @@ class MetricVariant(Enum):
 
 
 def calc_prf1(similarity_matrix, named=False):
-    precision = similarity_matrix.max(dim=1).values.mean()
-    recall = similarity_matrix.max(dim=0).values.mean()
-    f1 = 2 * ((precision * recall) / (precision + recall))
+    precision = similarity_matrix.max(dim=1).values.mean().item()
+    recall = similarity_matrix.max(dim=0).values.mean().item()
+    if (precision + recall) > 0.0:
+        f1 = 2 * ((precision * recall) / (precision + recall))
+    else:
+        f1 = 0.0
     if named:
         return {
-            "precision": precision.item(),
-            "recall": recall.item(),
-            "f1": f1.item()
+            "precision": precision,
+            "recall": recall,
+            "f1": f1
         }
-    return precision.item(), recall.item(), f1.item()
+    return precision, recall, f1
 
 
 def normalize_text(s):
@@ -38,3 +42,15 @@ def normalize_text(s):
         return text.lower()
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+
+def load_data(path):
+    try:
+        data = pickle.load(open(path, "rb"))
+    except FileNotFoundError:
+        data = []
+    return data
+
+
+def save_data(data, path):
+    pickle.dump(data, open(path, "wb"))

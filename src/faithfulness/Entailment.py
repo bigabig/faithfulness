@@ -1,12 +1,11 @@
-from typing import List
-
-import spacy
+from typing import List, Union
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from torch.utils.data import DataLoader
+from transformers.tokenization_utils_base import TruncationStrategy
 
 from faithfulness.interfaces.MetricInterface import MetricInterface
-from faithfulness.utils.Datasets import SimpleDataset
+from faithfulness.utils.Datasets import SimpleDataset, SummarizationDataset
 import torch.nn.functional as F
 from enum import Enum
 from tqdm import tqdm
@@ -19,7 +18,7 @@ class EntailmentMethod(Enum):
 
 class Entailment(MetricInterface):
 
-    def __init__(self, method=EntailmentMethod.SENT, modelname='roberta-large-mnli', spacymodel='en_core_web_lg'):
+    def __init__(self, method=EntailmentMethod.SENT, modelname='facebook/bart-large-mnli', batch_size=1, max_length=None):
 
         print(f'Loading entailment model {modelname}...')
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -27,58 +26,39 @@ class Entailment(MetricInterface):
         model = AutoModelForSequenceClassification.from_pretrained(modelname)
         model.to(device)
 
-        if method == EntailmentMethod.SENT:
-            print(f'Loading Spacy model {spacymodel}...')
-            self.nlp = spacy.load(spacymodel)
-
         self.method = method
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
 
+        self.batch_size = batch_size
+        self.max_length = max_length if max_length is not None else tokenizer.model_max_length
+
         self.num_labels = model.config._num_labels
-        self.entailment_id = model.config.label2id["ENTAILMENT"]
+        if modelname == "roberta-large-mnli":
+            self.entailment_id = model.config.label2id["ENTAILMENT"]
+        if modelname == "facebook/bart-large-mnli":
+            self.entailment_id = model.config.label2id["entailment"]
 
-    def score(self, summary_text: str, source_text: str):
+    def score(self, summary: Union[str, List[str]], source: Union[str, List[str]], additional_output: bool):
         if self.method == EntailmentMethod.SENT:
-            return self.__sentencewise_entailment(summary_text, source_text)
+            return self.__sentencewise_entailment(summary, source, additional_output)
         if self.method == EntailmentMethod.DOC:
-            return self.__documentwise_entailment(summary_text, source_text)
+            return self.__documentwise_entailment(summary, source)
 
-    def score_batch(self, summaries: List[str], sources: List[str]):
-        return [
-            self.score(summary, source)
-            for (summary, source) in tqdm(zip(summaries, sources))
-        ]
+    def score_batch(self, summaries: Union[List[str], List[List[str]]], sources: Union[List[str], List[List[str]]], additional_output: bool):
+        if self.method == EntailmentMethod.SENT:
+            return self.__sentencewise_entailment_batch(summaries, sources, additional_output)
+        if self.method == EntailmentMethod.DOC:
+            return self.__documentwise_entailment_batch(summaries, sources)
 
-    def __split_sentences(self, text):
-        if self.method != EntailmentMethod.SENT:
-            print(f"ERROR: Sentence splitting is only supported when using 'EntailmentMethod.SENT'.")
-            exit()
-
-        return [x.text for x in self.nlp(text).sents]
-
-    def __sentencewise_entailment(self, summary, source):
-        # split sentences
-        summary_sentences = self.__split_sentences(summary)
-        source_sentences = self.__split_sentences(source)
-
+    def __sentencewise_entailment(self, summary_sentences: List[str], source_sentences: List[str], additional_output: bool):
         # create all source-summary sentence pairs
-        # all pairs will have a maximum sequence length of 512 tokens
-        # to achieve this, the source sentence may be shortened! the summary will always be full length
         pairs = []
         for source_sentence in source_sentences:
             for summary_sentence in summary_sentences:
-                source_tokens = self.tokenizer.encode(source_sentence, add_special_tokens=False)
-                summary_tokens = self.tokenizer.encode(summary_sentence, add_special_tokens=False)
-                if len(source_tokens) + len(summary_tokens) > self.tokenizer.max_len_sentences_pair:
-                    source_tokens = source_tokens[:(len(source_tokens) + len(summary_tokens) - self.tokenizer.max_len_sentences_pair)]
-                    pairs.append({"source": self.tokenizer.decode(source_tokens), "summary": summary_sentence})
-                else:
-                    pairs.append({"source": source_sentence, "summary": summary_sentence})
-
-        dataset = SimpleDataset(pairs)
-        dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
+                pairs.append({"source": source_sentence, "summary": summary_sentence})
+        dataloader = DataLoader(SimpleDataset(pairs), batch_size=self.batch_size, shuffle=False)
 
         # use model to predict outputs
         outputs = None
@@ -87,7 +67,7 @@ class Entailment(MetricInterface):
             summary_batch = data['summary']
 
             # create model inputs
-            inputs = self.tokenizer(source_batch, summary_batch, return_tensors="pt", padding=True)
+            inputs = self.tokenizer(source_batch, summary_batch, return_tensors="pt", padding=True, truncation=TruncationStrategy.ONLY_FIRST, max_length=self.max_length)
             inputs.to(self.device)
 
             # predict output
@@ -113,25 +93,25 @@ class Entailment(MetricInterface):
         max_entailment_scores = values  # e.g. [0.9, 0.8] means that summary sentence 0 is entailed with 90% by a source sentence and summary sentence 1 is entailed with 80% by a source sentence
         entailed_by = indices  # e.g. [0, 4] means that summary sentence 0 is entailed by source sentence 0 and summary sentence 1 is entailed by source sentence 4
 
-        return max_entailment_scores.mean().item(), entailed_by.tolist(), max_entailment_scores
+        if additional_output:
+            return {
+                "score": max_entailment_scores.mean().item(),
+                "alignment": entailed_by.tolist(),
+                "entailment": max_entailment_scores.tolist(),
+            }
+        return {"score": max_entailment_scores.mean().item()}
 
-    # todo: add correct document wise entailment!
+    def __sentencewise_entailment_batch(self, summaries: List[List[str]], sources: List[List[str]], additional_output: bool):
+        results = {}
+        for (summary, source) in tqdm(zip(summaries, sources)):
+            result = self.__sentencewise_entailment(summary, source, additional_output)
+            for key, value in result.items():
+                results[key] = [*results.get(key, []), value]
+        return results
+
     def __documentwise_entailment(self, summary, source):
-        # tokenize input
-        source_tokens = self.tokenizer(source, add_special_tokens=False)['input_ids']
-        summary_tokens = self.tokenizer(summary, add_special_tokens=False)['input_ids']
-
-        # make sure that input is maximum 512 tokens
-        # we cut the source document to fit into this limitation
-        # - 3 for start, end and sep token.
-        if len(source_tokens) + len(summary_tokens) > self.tokenizer.max_len_sentences_pair:
-            source_tokens = source_tokens[:(len(source_tokens) + len(summary_tokens) - self.tokenizer.max_len_sentences_pair)]
-            pair = {"source": self.tokenizer.decode(source_tokens), "summary": summary}
-        else:
-            pair = {"source": source, "summary": summary}
-
         # predict entailment
-        inputs = self.tokenizer(pair['source'], pair['summary'], return_tensors="pt")
+        inputs = self.tokenizer(source, summary, return_tensors="pt", truncation=TruncationStrategy.ONLY_FIRST, max_length=self.max_length)
         inputs.to(self.device)
         output = self.model(**inputs)  # e.g. for roberta-mnli [contradiction_score, neutral_score, entailment_score]
         outputs = output['logits'].detach()
@@ -140,4 +120,26 @@ class Entailment(MetricInterface):
         all_scores = F.softmax(outputs, dim=1)
         score = all_scores[:, self.entailment_id].mean().item()
 
-        return score
+        return {"score": score}
+
+    def __documentwise_entailment_batch(self, summaries: List[str], sources: List[str]):
+        # load data into dataset
+        assert len(summaries) == len(sources)
+        dataloader = DataLoader(SummarizationDataset(summaries, sources), batch_size=self.batch_size, shuffle=False)
+
+        result = []
+        for batch in tqdm(dataloader,  desc="Calculating documentwise entailment..."):
+            batch_summaries = batch["summaries"]
+            batch_sources = batch["sources"]
+
+            # tokenize truncated input
+            inputs = self.tokenizer(batch_sources, batch_summaries, return_tensors="pt", padding=True, truncation=TruncationStrategy.ONLY_FIRST, max_length=self.max_length)
+            inputs.to(self.device)
+
+            # calc entailment
+            output = self.model(**inputs)
+            outputs = output['logits'].detach()  # e.g. for roberta-mnli [contradiction_score, neutral_score, entailment_score]
+            scores = F.softmax(outputs, dim=1)  # convert to probabilities
+            result.extend(scores[:, self.entailment_id].tolist())
+
+        return {"score": result}
