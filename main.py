@@ -49,9 +49,9 @@ def main():
 
     # Entailment Example - Method = Sent
 
-    # entailment = Entailment(method=EntailmentMethod.SENT)
-    # faithfulness = entailment.score_batch(summaries, sources)
-    # print(faithfulness)  # [0.9937246441841125, 0.971221387386322, 0.9567081332206726]
+    entailment = Entailment(method=EntailmentMethod.SENT, batch_size=2)
+    output = entailment.score_batch([["I hate you.", "I love you."], ["Tim is cool.", "Tim is nice."]], [["I love you.", "I hate you.", "I love you."], ["Tim is hip.", "Tim is shit."]], True)
+    print(output)  # [0.9937246441841125, 0.971221387386322, 0.9567081332206726]
 
     # entailment = Entailment(method=EntailmentMethod.DOC)
     # faithfulness = entailment.score_batch(summaries, sources)
@@ -92,7 +92,6 @@ def main():
     # ie = OpenIE(metric=F1())
     # precision, recall, f1, alignment, similarities = ie.eval(summary, source)
     # print("LOL")
-
 
 
 if __name__ == '__main__':

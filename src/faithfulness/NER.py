@@ -31,20 +31,20 @@ class NER(MetricInterface):
 
         if self.ner_variant == MetricVariant.F1:
             summary_source_result = self.__calc_score(summary_entities, summary_entities, source_entities, additional_output)
-            source_summary_result = self.__calc_score(source_entities, summary_entities, source_entities, additional_output)
+            source_summary_result = self.__calc_score(source_entities, source_entities, summary_entities, additional_output)
 
             scores = {
                 "precision": summary_source_result[self.metric_variant.value],
-                "recall": source_summary_result[self.metric_variant.value],
+                "recall": source_summary_result[self.metric_variant.value]
             }
 
             scores["f1"] = 2 * ((scores["precision"] * scores["recall"]) / (scores["precision"] + scores["recall"])) if (scores["precision"] + scores["recall"]) > 0.0 else 0.0
 
             if additional_output:
-                scores["summary_source_alignment"] = summary_source_result["alignment"],
-                scores["summary_source_similarities"] = summary_source_result["similarities"],
-                scores["source_summary_alignment"] = source_summary_result["alignment"],
-                scores["source_summary_similarities"] = source_summary_result["similarities"],
+                scores["summary_source_alignment"] = summary_source_result["alignment"]
+                scores["summary_source_similarities"] = summary_source_result["similarities"]
+                scores["source_summary_alignment"] = source_summary_result["alignment"]
+                scores["source_summary_similarities"] = source_summary_result["similarities"]
                 result.update(scores)
             else:
                 result.update({self.ner_variant.value: scores[self.ner_variant.value]})
@@ -86,15 +86,16 @@ class NER(MetricInterface):
                 if key == self.metric_variant.value:
                     results[self.metric_variant.value] = [*results.get(self.metric_variant.value, []), value]
                 elif additional_output and key in ["alignment", "similarities"]:
-                    # TODO handle alignment (correctly) in combination with ner label
-                    results[key] = [*results.get(key, []), value]
+                    if key not in results:
+                        results[key] = {}
+                    results[key][ner_label] = value
 
         # if a summary has no named entities, we assume it is faithful!
         if len(entities.keys()) == 0:
             results[self.metric_variant.value] = 1.0
             if additional_output:
-                results["alignment"] = []
-                results["similarities"] = []
+                results["alignment"] = {}
+                results["similarities"] = {}
             return results
 
         results[self.metric_variant.value] = np.array(results[self.metric_variant.value]).mean().item()

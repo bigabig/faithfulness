@@ -9,6 +9,7 @@ from faithfulness.utils.Datasets import SimpleDataset, SummarizationDataset
 import torch.nn.functional as F
 from enum import Enum
 from tqdm import tqdm
+from faithfulness.utils.utils import MetricVariant
 
 
 class EntailmentMethod(Enum):
@@ -18,7 +19,7 @@ class EntailmentMethod(Enum):
 
 class Entailment(MetricInterface):
 
-    def __init__(self, method=EntailmentMethod.SENT, modelname='facebook/bart-large-mnli', batch_size=1, max_length=None):
+    def __init__(self, method=EntailmentMethod.SENT, modelname='facebook/bart-large-mnli', batch_size=1, max_length=None, variant=MetricVariant.F1):
 
         print(f'Loading entailment model {modelname}...')
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -30,6 +31,7 @@ class Entailment(MetricInterface):
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
+        self.variant = variant
 
         self.batch_size = batch_size
         self.max_length = max_length if max_length is not None else tokenizer.model_max_length
@@ -44,7 +46,7 @@ class Entailment(MetricInterface):
         if self.method == EntailmentMethod.SENT:
             return self.__sentencewise_entailment(summary, source, additional_output)
         if self.method == EntailmentMethod.DOC:
-            return self.__documentwise_entailment(summary, source)
+            return self.__documentwise_entailment(summary, source, additional_output)
 
     def score_batch(self, summaries: Union[List[str], List[List[str]]], sources: Union[List[str], List[List[str]]], additional_output: bool):
         if self.method == EntailmentMethod.SENT:
@@ -60,46 +62,76 @@ class Entailment(MetricInterface):
                 pairs.append({"source": source_sentence, "summary": summary_sentence})
         dataloader = DataLoader(SimpleDataset(pairs), batch_size=self.batch_size, shuffle=False)
 
+        variants = [MetricVariant.PRECISION, MetricVariant.RECALL] if self.variant == MetricVariant.F1 else [self.variant]
+
         # use model to predict outputs
-        outputs = None
-        for data in dataloader:
-            source_batch = data['source']
-            summary_batch = data['summary']
+        score = {}
+        entailment = {}
+        alignment = {}
 
-            # create model inputs
-            inputs = self.tokenizer(source_batch, summary_batch, return_tensors="pt", padding=True, truncation=TruncationStrategy.ONLY_FIRST, max_length=self.max_length)
-            inputs.to(self.device)
+        for variant in variants:
+            scores = []
 
-            # predict output
-            output = self.model(**inputs)
+            for data in dataloader:
+                source_batch = data['source']
+                summary_batch = data['summary']
 
-            # concatenate output to all outputs
-            if outputs is None:
-                outputs = output['logits'].detach()
+                a = source_batch if variant == MetricVariant.PRECISION else summary_batch
+                b = summary_batch if variant == MetricVariant.PRECISION else source_batch
+                truncation_strategy = TruncationStrategy.ONLY_FIRST if variant == MetricVariant.PRECISION else TruncationStrategy.ONLY_SECOND
+
+                # create model inputs
+                inputs = self.tokenizer(a, b, return_tensors="pt", padding=True, truncation=truncation_strategy, max_length=self.max_length)
+                inputs.to(self.device)
+
+                # predict output
+                output = self.model(**inputs)
+                output = output['logits'].detach()
+
+                # convert to probabilities
+                output = F.softmax(output, dim=1)
+
+                # extract entailment probabilities & append
+                scores.extend(output[:, self.entailment_id].tolist())
+
+            # reshape to (#source_sentences, #summary_sentences, #scores)
+            scores = torch.tensor(scores).reshape(len(source_sentences), len(summary_sentences))
+
+            # entailment: e.g. [0.9, 0.8] means that summary sentence 0 is entailed with 90% by a source sentence and summary sentence 1 is entailed with 80% by a source sentence
+            # alignment: e.g. [0, 4] means that summary sentence 0 is entailed by source sentence 0 and summary sentence 1 is entailed by source sentence 4
+            e, a = scores.max(dim=0 if variant == MetricVariant.PRECISION else 1)
+
+            score[variant.value] = e.mean().item()
+            entailment[variant.value] = e.tolist()
+            alignment[variant.value] = a.tolist()
+
+        if self.variant == MetricVariant.PRECISION or self.variant == MetricVariant.RECALL:
+            if additional_output:
+                return {
+                    "score": score[self.variant.value],
+                    "alignment": alignment[self.variant.value],
+                    "entailment": entailment[self.variant.value],
+                }
+            return {"score": score[self.variant.value]}
+
+        else:
+            precision = score[MetricVariant.PRECISION.value]
+            recall = score[MetricVariant.RECALL.value]
+            if (precision + recall) > 0.0:
+                f1 = 2 * ((precision * recall) / (precision + recall))
             else:
-                outputs = torch.cat((outputs, output['logits'].detach()))
-
-        # convert logits into percentages
-        scores = F.softmax(outputs, dim=1)  # shape (#sentence pairs, #labels)
-
-        # reshape to (#source_sentences, #summary_sentences, #scores)
-        scores = scores.reshape(len(source_sentences), len(summary_sentences), self.num_labels)
-
-        # extract entailment probabilities
-        entailment_scores = scores[:, :, self.entailment_id]
-
-        # for every summary sentence find source sentences that have the highest entailment score
-        values, indices = entailment_scores.max(dim=0)
-        max_entailment_scores = values  # e.g. [0.9, 0.8] means that summary sentence 0 is entailed with 90% by a source sentence and summary sentence 1 is entailed with 80% by a source sentence
-        entailed_by = indices  # e.g. [0, 4] means that summary sentence 0 is entailed by source sentence 0 and summary sentence 1 is entailed by source sentence 4
-
-        if additional_output:
-            return {
-                "score": max_entailment_scores.mean().item(),
-                "alignment": entailed_by.tolist(),
-                "entailment": max_entailment_scores.tolist(),
-            }
-        return {"score": max_entailment_scores.mean().item()}
+                f1 = 0.0
+            if additional_output:
+                return {
+                    "precision": precision,
+                    "recall": recall,
+                    "f1": f1,
+                    "summary_alignment": alignment[MetricVariant.PRECISION.value],
+                    "source_alignment": alignment[MetricVariant.RECALL.value],
+                    "summary_entailment": entailment[MetricVariant.PRECISION.value],
+                    "source_entailment": entailment[MetricVariant.RECALL.value],
+                }
+            return {"score": f1}
 
     def __sentencewise_entailment_batch(self, summaries: List[List[str]], sources: List[List[str]], additional_output: bool):
         results = {}
@@ -109,37 +141,79 @@ class Entailment(MetricInterface):
                 results[key] = [*results.get(key, []), value]
         return results
 
-    def __documentwise_entailment(self, summary, source):
-        # predict entailment
-        inputs = self.tokenizer(source, summary, return_tensors="pt", truncation=TruncationStrategy.ONLY_FIRST, max_length=self.max_length)
-        inputs.to(self.device)
-        output = self.model(**inputs)  # e.g. for roberta-mnli [contradiction_score, neutral_score, entailment_score]
-        outputs = output['logits'].detach()
+    def __documentwise_entailment(self, summary, source, additional_output: bool):
+        variants = [MetricVariant.PRECISION, MetricVariant.RECALL] if self.variant == MetricVariant.F1 else [self.variant]
 
-        # calculate entailment score
-        all_scores = F.softmax(outputs, dim=1)
-        score = all_scores[:, self.entailment_id].mean().item()
+        score = {}
+        for variant in variants:
+            a = source if variant == MetricVariant.PRECISION else summary
+            b = summary if variant == MetricVariant.PRECISION else source
+            truncation_strategy = TruncationStrategy.ONLY_FIRST if variant == MetricVariant.PRECISION else TruncationStrategy.ONLY_SECOND
 
-        return {"score": score}
+            # predict entailment
+            inputs = self.tokenizer(a, b, return_tensors="pt", truncation=truncation_strategy, max_length=self.max_length)
+            inputs.to(self.device)
+            output = self.model(**inputs)  # e.g. for roberta-mnli [contradiction_score, neutral_score, entailment_score]
+            outputs = output['logits'].detach()
 
-    def __documentwise_entailment_batch(self, summaries: List[str], sources: List[str]):
+            # calculate entailment score
+            all_scores = F.softmax(outputs, dim=1)
+            score[variant.value] = all_scores[:, self.entailment_id].mean().item()
+
+        if self.variant == MetricVariant.F1:
+            precision = score[MetricVariant.PRECISION.value]
+            recall = score[MetricVariant.RECALL.value]
+            f1 = 2 * ((precision * recall) / (precision + recall)) if (precision + recall) > 0.0 else 0.0
+            if additional_output:
+                return {
+                    "precision": precision,
+                    "recall": recall,
+                    "f1": f1
+                }
+            else:
+                return {"score": f1}
+        return {"score": score[self.variant.value]}
+
+    def __documentwise_entailment_batch(self, summaries: List[str], sources: List[str], additional_output: bool):
         # load data into dataset
         assert len(summaries) == len(sources)
         dataloader = DataLoader(SummarizationDataset(summaries, sources), batch_size=self.batch_size, shuffle=False)
 
-        result = []
+        variants = [MetricVariant.PRECISION, MetricVariant.RECALL] if self.variant == MetricVariant.F1 else [self.variant]
+
+        results = {}
+        for variant in variants:
+            results[variant.value] = []
+
         for batch in tqdm(dataloader,  desc="Calculating documentwise entailment..."):
             batch_summaries = batch["summaries"]
             batch_sources = batch["sources"]
 
-            # tokenize truncated input
-            inputs = self.tokenizer(batch_sources, batch_summaries, return_tensors="pt", padding=True, truncation=TruncationStrategy.ONLY_FIRST, max_length=self.max_length)
-            inputs.to(self.device)
+            for variant in variants:
+                a = batch_sources if variant == MetricVariant.PRECISION else batch_summaries
+                b = batch_summaries if variant == MetricVariant.PRECISION else batch_sources
+                truncation_strategy = TruncationStrategy.ONLY_FIRST if variant == MetricVariant.PRECISION else TruncationStrategy.ONLY_SECOND
 
-            # calc entailment
-            output = self.model(**inputs)
-            outputs = output['logits'].detach()  # e.g. for roberta-mnli [contradiction_score, neutral_score, entailment_score]
-            scores = F.softmax(outputs, dim=1)  # convert to probabilities
-            result.extend(scores[:, self.entailment_id].tolist())
+                # tokenize truncated input
+                inputs = self.tokenizer(a, b, return_tensors="pt", padding=True, truncation=truncation_strategy.ONLY_FIRST, max_length=self.max_length)
+                inputs.to(self.device)
 
-        return {"score": result}
+                # calc entailment
+                output = self.model(**inputs)
+                outputs = output['logits'].detach()  # e.g. for roberta-mnli [contradiction_score, neutral_score, entailment_score]
+                scores = F.softmax(outputs, dim=1)  # convert to probabilities
+                results[variant.value].extend(scores[:, self.entailment_id].tolist())
+
+        if self.variant == MetricVariant.F1:
+            precisions = results[MetricVariant.PRECISION.value]
+            recalls = results[MetricVariant.RECALL.value]
+            f1s = [2 * ((precision * recall) / (precision + recall)) if (precision + recall) > 0.0 else 0.0 for precision, recall in zip(precisions, recalls)]
+            if additional_output:
+                return {
+                    "precision": precisions,
+                    "recall": recalls,
+                    "f1": f1s
+                }
+            else:
+                return {"score": f1s}
+        return {"score": results[self.variant.value]}

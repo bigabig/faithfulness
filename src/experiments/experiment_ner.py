@@ -9,10 +9,11 @@ from faithfulness.utils.correlation import pearson, spearman
 
 with open("prepared_xsum.json", "r", encoding="UTF-8") as infile:
     data = json.load(infile)
+data = data[:10]
 summaries, sources, faithfulness_scores = zip(*[(x["summary"], x["source"], x["faithfulness"]) for x in data])
 
 # Load metric
-metric_name = "ner_em"
+metric_name = "ner_em2"
 similarity_metric = ExactMatch()
 metric = NER(metric=similarity_metric)
 
