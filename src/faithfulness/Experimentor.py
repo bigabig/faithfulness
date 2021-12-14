@@ -1,6 +1,7 @@
 import json
 import csv
 import pathlib
+from builtins import map
 from typing import List, Union
 from faithfulness.BERTScore import BERTScore, BERTScoreResult
 from faithfulness.Entailment import Entailment, EntailmentResult, is_EntailmentResult
@@ -134,6 +135,17 @@ class Experimentor:
                 x["new_source_sentences"] = result["source_sentences"]
                 x["summary_phrases"] = result["summary_phrases"]
                 x["source_phrases"] = result["source_phrases"]
+
+        # scale precision recall and f1 between 0 - 1
+        for score in ["precision", "recall", "f1"]:
+            scores = [x[score] for x in self.data]
+            min_score = min(scores)
+            max_score = max(scores)
+            print(f"Scacling from {min_score} - {max_score} to 0 - 1")
+            for x in self.data:
+                print(f"Before: {x[score]}")
+                x[score] = (x[score] - min_score) / (max_score - min_score)
+                print(f"After: {x[score]}")
 
         # Save results as json file
         with self.out_file_json.open(encoding="UTF-8", mode="w") as file:
