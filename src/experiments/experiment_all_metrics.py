@@ -1,4 +1,6 @@
 from pathlib import Path
+
+from faithfulness.Baseline import Baseline, BaselineMethod
 from faithfulness.Entailment import Entailment, EntailmentMethod
 from faithfulness.BERTScore import BERTScore, BERTScoreMethod
 from faithfulness.Experimentor import Experimentor
@@ -10,6 +12,42 @@ from faithfulness.SentSim import SentSim
 from faithfulness.similarity.ExactMatch import ExactMatch
 from faithfulness.similarity.F1 import F1
 from faithfulness.similarity.SentCos import SentCos
+
+examples = 10
+
+# ----------------------------------------------------------------------------------------------------------------------
+# BASELINES
+# ----------------------------------------------------------------------------------------------------------------------
+
+output_path = Path("./xsum/baseline")
+input_path = Path("./prepared_xsum.json")
+
+faithfulness_metric = Baseline(method=BaselineMethod.ONE)
+Experimentor(data_path=input_path,
+             out_path=output_path,
+             metric=faithfulness_metric,
+             experiment_name="baseline_one",
+             examples=examples,
+             scale=False).experiment()
+
+faithfulness_metric = Baseline(method=BaselineMethod.ZERO)
+Experimentor(data_path=input_path,
+             out_path=output_path,
+             metric=faithfulness_metric,
+             experiment_name="baseline_zero",
+             examples=examples,
+             scale=False).experiment()
+
+faithfulness_metric = Baseline(method=BaselineMethod.RANDOM)
+Experimentor(data_path=input_path,
+             out_path=output_path,
+             metric=faithfulness_metric,
+             experiment_name="baseline_random",
+             examples=examples,
+             scale=False).experiment()
+
+# print("FINISHED!")
+# exit()
 
 # ----------------------------------------------------------------------------------------------------------------------
 # SEMANTIC ROLE LABELING
@@ -23,28 +61,28 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="srl_sentcos",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = SRL(metric=F1, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="srl_f1",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = SRL(metric=ExactMatch, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="srl_em",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = SRL(metric=BERTScore, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="srl_bertscore",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # print("FINISHED!")
 # exit()
@@ -61,28 +99,28 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="openie_sentcos",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = OpenIE(metric=F1, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="openie_f1",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = OpenIE(metric=ExactMatch, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="openie_em",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = OpenIE(metric=BERTScore, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="openie_bertscore",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # print("FINISHED!")
 # exit()
@@ -99,28 +137,28 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="ner_sentcos",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = NER(metric=F1)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="ner_f1",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = NER(metric=ExactMatch)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="ner_em",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = NER(metric=BERTScore)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="ner_bertscore",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # print("FINISHED!")
 # exit()
@@ -137,14 +175,14 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="entailment_sent",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = Entailment(method=EntailmentMethod.DOC, max_length=512)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="entailment_doc",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # print("FINISHED!")
 # exit()
@@ -161,14 +199,14 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="bertscore_doc",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = BERTScore(method=BERTScoreMethod.SENT)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="bertscore_sent",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # print("FINISHED!")
 # exit()
@@ -185,28 +223,28 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="sentsim_sentcos",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = SentSim(metric=F1)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="sentsim_f1",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = SentSim(metric=ExactMatch)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="sentsim_em",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = SentSim(metric=BERTScore)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="sentsim_bertscore",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # print("FINISHED!")
 # exit()
@@ -223,21 +261,21 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="qgqa_sentcos",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = QGQA(metric=F1, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="qgqa_f1",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 faithfulness_metric = QGQA(metric=ExactMatch, save_path=output_path, batch_mode=True)
 Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="qgqa_em",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # do not use BERTScore SENT variant, the score_batch method of BERTScore SENT expects List[List[str]] but QGQA will only input List[str] of answers to compare
 faithfulness_metric = QGQA(metric=BERTScore, save_path=output_path, batch_mode=True)
@@ -245,7 +283,7 @@ Experimentor(data_path=input_path,
              out_path=output_path,
              metric=faithfulness_metric,
              experiment_name="qgqa_bertscore",
-             examples=10).experiment()
+             examples=examples).experiment()
 
 # print("FINISHED!")
 # exit()

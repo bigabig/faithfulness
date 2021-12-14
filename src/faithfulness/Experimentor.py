@@ -4,6 +4,7 @@ import pathlib
 from builtins import map
 from typing import List, Union
 from faithfulness.BERTScore import BERTScore, BERTScoreResult
+from faithfulness.Baseline import Baseline
 from faithfulness.Entailment import Entailment, EntailmentResult, is_EntailmentResult
 from faithfulness.NER import NER, NERResult
 from faithfulness.OpenIE import OpenIE, OpenIEResult
@@ -17,15 +18,17 @@ from faithfulness.utils.utils import ensure_dir_exists, PRF1Result, load_json_da
 
 
 class Experimentor:
-    def __init__(self, data_path: pathlib.Path, out_path: pathlib.Path, metric: Union[SentSim, QGQA, BERTScore, Entailment, NER, OpenIE, SRL], experiment_name: str,
+    def __init__(self, data_path: pathlib.Path, out_path: pathlib.Path, metric: Union[SentSim, QGQA, BERTScore, Entailment, NER, OpenIE, SRL, Baseline], experiment_name: str,
                  data_faithfulness_key="faithfulness",
                  data_summary_key="summary",
                  data_source_key="source",
                  data_summary_sentences_key="summary_sentences",
                  data_source_sentences_key="source_sentences",
-                 examples=-1):
+                 examples=-1,
+                 scale=True):
 
         self.data_path = data_path
+        self.scale = scale
 
         ensure_dir_exists(out_path)
         self.out_file_json = out_path / (experiment_name + ".json")
@@ -136,16 +139,24 @@ class Experimentor:
                 x["summary_phrases"] = result["summary_phrases"]
                 x["source_phrases"] = result["source_phrases"]
 
+        if isinstance(self.metric, Baseline):
+            results: List[PRF1Result] = self.metric.score_batch(self.experiment_input[0], self.experiment_input[1])
+            for x, result in zip(self.data, results):
+                x["precision"] = result["precision"]
+                x["recall"] = result["recall"]
+                x["f1"] = result["f1"]
+
         # scale precision recall and f1 between 0 - 1
-        for score in ["precision", "recall", "f1"]:
-            scores = [x[score] for x in self.data]
-            min_score = min(scores)
-            max_score = max(scores)
-            print(f"Scacling from {min_score} - {max_score} to 0 - 1")
-            for x in self.data:
-                print(f"Before: {x[score]}")
-                x[score] = (x[score] - min_score) / (max_score - min_score)
-                print(f"After: {x[score]}")
+        if self.scale:
+            for score in ["precision", "recall", "f1"]:
+                scores = [x[score] for x in self.data]
+                min_score = min(scores)
+                max_score = max(scores)
+                print(f"Scacling from {min_score} - {max_score} to 0 - 1")
+                for x in self.data:
+                    print(f"Before: {x[score]}")
+                    x[score] = (x[score] - min_score) / (max_score - min_score)
+                    print(f"After: {x[score]}")
 
         # Save results as json file
         with self.out_file_json.open(encoding="UTF-8", mode="w") as file:
