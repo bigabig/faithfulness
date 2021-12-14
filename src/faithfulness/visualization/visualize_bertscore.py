@@ -1,9 +1,10 @@
-import json
-import numpy as np
 from transformers import AutoTokenizer
+import numpy as np
+
+tokenizer = AutoTokenizer.from_pretrained("roberta-large-mnli", use_fast=False)
 
 
-def convert_token_to_word_similarities(tokens, similarities, tokenizer):
+def convert_token_to_word_similarities(tokens, similarities):
     word_id = 0
     start_new = True
 
@@ -62,9 +63,9 @@ def convert_token_to_word_similarities(tokens, similarities, tokenizer):
     return words, tokenid2wordid
 
 
-def prepare(summary_tokens, source_tokens, similarities, tokenizer):
-    summary_words, summary_tokenid2summary_wordid = convert_token_to_word_similarities(summary_tokens, similarities, tokenizer)
-    source_words, source_tokenid2source_wordid = convert_token_to_word_similarities(source_tokens, np.array(similarities).T.tolist(), tokenizer)
+def prepare(summary_tokens, source_tokens, similarities):
+    summary_words, summary_tokenid2summary_wordid = convert_token_to_word_similarities(summary_tokens, similarities)
+    source_words, source_tokenid2source_wordid = convert_token_to_word_similarities(source_tokens, np.array(similarities).T.tolist())
 
     for summary_word in summary_words:
         summary_word[2] = source_tokenid2source_wordid[summary_word[2]]
@@ -75,37 +76,16 @@ def prepare(summary_tokens, source_tokens, similarities, tokenizer):
     return summary_words, source_words
 
 
-def main():
-    # Load input data
-    with open("bertscore_sent.json", "r", encoding="UTF-8") as infile:
-        data = json.load(infile)
-    data = data[:10]
+def visualize(data):
+    summary_words, source_words = prepare(data["summary_tokens"],
+                                          data["source_tokens"],
+                                          data["similarities"])
 
-    # Load BERTScore tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("roberta-large-mnli", use_fast=False)
-
-    # Prepare the data
-    metricname = "bertscore_sent"
-    result = {
-        "method": "bertscore",
-        "data": [],
+    return {
+        "summary_words": summary_words,
+        "source_words": source_words,
+        "faithfulness": data["faithfulness"],
+        "precision": data["precision"],
+        "recall": data["recall"],
+        "f1": data["f1"]
     }
-    for x in data:
-        summary_words, source_words = prepare(x[f"{metricname}_summary_tokens"], x[f"{metricname}_source_tokens"], x[f"{metricname}_similarities"], tokenizer)
-
-        result["data"].append({
-            "summary_words": summary_words,
-            "source_words": source_words,
-            "faithfulness": x["faithfulness"],
-            "precision": x[f"{metricname}_precision"],
-            "recall": x[f"{metricname}_recall"],
-            "f1": x[f"{metricname}_f1"]
-        })
-
-    # Write output as json
-    with open(f"{metricname}_ui.json", "w", encoding="UTF-8") as outfile:
-        json.dump(result, outfile)
-
-
-if __name__ == '__main__':
-    main()

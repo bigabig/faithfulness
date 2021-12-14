@@ -4,11 +4,23 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, AutoModel
+
+from faithfulness.types.AlignScoreResult import AlignScoreResult
+from faithfulness.interfaces.FaithfulnessInput import FaithfulnessInput
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from faithfulness.utils.Datasets import SimpleDataset, SummarizationDataset
-from faithfulness.utils.utils import calc_prf1, MetricVariant
+from faithfulness.utils.utils import calc_prf1, PRF1Result
 from tqdm import tqdm
 import itertools
+
+
+class PRF1SimResult(PRF1Result):
+    similarities: List[List[float]]
+
+
+class BERTScoreResult(PRF1SimResult):
+    summary_tokens: List[int]
+    source_tokens: List[int]
 
 
 class BERTScoreMethod(Enum):
@@ -18,12 +30,11 @@ class BERTScoreMethod(Enum):
 
 class BERTScore(SimilarityMetricInterface):
 
-    def __init__(self, modelname="roberta-large-mnli", layer=8, variant=MetricVariant.F1, method=BERTScoreMethod.DOC, batch_size=2):
+    def __init__(self, modelname="roberta-large-mnli", layer=8, method=BERTScoreMethod.DOC, batch_size=2):
         """
         Evaluate summaries and sources using BERTScore
         :param modelname: this model calculates token embeddings
         :param layer: this layer's embeddings are used as token embeddings
-        :param variant: calculate BERTScore Precision, Recall or F1
         :param method: calculate BERTScore for whole documents (truncated if longer than the model's max input length) or per sentence (truncated if sentence is longer than the model's max inmput length). Does NOT affect align_and_score().
         :param batch_size: when using score_batch, how many documents / sentences should be processed in parallel (depends on your GPU)
         """
@@ -38,94 +49,95 @@ class BERTScore(SimilarityMetricInterface):
         self.tokenizer = tokenizer
         self.layer = layer
         self.device = device
-        self.batch_size = 8
-        self.variant = variant
         self.method = method
         self.batch_size = batch_size
 
-    def get_variant(self) -> MetricVariant:
-        return self.variant
+    def needs_input(self) -> FaithfulnessInput:
+        return FaithfulnessInput.SENTENCE if self.method == BERTScoreMethod.SENT else FaithfulnessInput.DOCUMENT
 
-    def score(self, summary: Union[str, List[str]], source: Union[str, List[str]], additional_output: bool):
+    def score(self, summary: Union[str, List[str]], source: Union[str, List[str]]) -> BERTScoreResult:
         """
         Calculate BERTScore for a summary and corresponding source document.
         :param summary: string (a summary document) [If BERTScoreMethod.DOC] or List[str] (a summary document consisting of multiple sentences) [If BERTScoreMethod.SENT]
         :param source: string (a source document) [If BERTScoreMethod.DOC] or List[str] (a source document consisting of multiple sentences) [If BERTScoreMethod.SENT]
-        :param additional_output: output additional information or just {self.variant}
-        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens} [If additional_output], {self.variant} [else]
+        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens}
         """
         if self.method == BERTScoreMethod.DOC:
-            return self.__score_document(summary, source, additional_output)
+            return self.__score_document(summary, source)
         if self.method == BERTScoreMethod.SENT:
-            return self.__score_sentences(summary, source, additional_output)
+            return self.__score_sentences(summary, source)
 
-    def __score_document(self, summary_text: str, source_text: str, additional_output: bool):
+    def __score_document(self, summary_text: str, source_text: str) -> BERTScoreResult:
         """
         Calculate BERTScore for a summary and corresponding source text, each consisting of a single string.
         Documents longer than 512 tokens (depending on the model) are truncated.
         :param summary_text: summary consisting of a single string
         :param source_text: source consisting of a single string
-        :param additional_output: output additional information or just {self.variant}
-        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens} [If additional_output], {self.variant} [else]
+        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens}
         """
         # embed summary & source
         summary_embeddings, summary_tokens = self.__embed(summary_text)
         source_embeddings, source_tokens = self.__embed(source_text)
 
         # calculate bertscore
-        result = self.__calc_bertscore(summary_embeddings, source_embeddings, additional_output)
-        if additional_output:
-            result["summary_tokens"] = summary_tokens
-            result["source_tokens"] = source_tokens
-        return result
+        result = BERTScore.__calc_bertscore(summary_embeddings, source_embeddings)
+        return {
+            "precision": result["precision"],
+            "recall": result["recall"],
+            "f1": result["f1"],
+            "similarities": result["similarities"],
+            "summary_tokens": summary_tokens,
+            "source_tokens": source_tokens
+        }
 
-    def __score_sentences(self, summary_sentences: List[str], source_sentences: List[str], additional_output: bool):
+    def __score_sentences(self, summary_sentences: List[str], source_sentences: List[str]) -> BERTScoreResult:
         """
         Calculate BERTScore for a summary and corresponding source text, each consisting of multiple sentences (a list of strings)
         Sentences longer than 512 tokens (depending on the model) are truncated.
         :param summary_sentences: summary consisting of multiple sentences (List of strings)
         :param source_sentences: summary consisting of multiple sentences (List of strings)
-        :param additional_output: output additional information or just {self.variant}
-        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens} [If additional_output], {self.variant} [else]
+        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens}
         """
         # embed summary & source
         summary_embeddings, summary_tokens = self.__embed_batch(summary_sentences, False)
         source_embeddings, source_tokens = self.__embed_batch(source_sentences, False)
 
         # calculate bertscore
-        result = self.__calc_bertscore(summary_embeddings, source_embeddings, additional_output)
-        if additional_output:
-            result["summary_tokens"] = summary_tokens
-            result["source_tokens"] = source_tokens
-        return result
+        result = BERTScore.__calc_bertscore(summary_embeddings, source_embeddings)
+        return {
+            "precision": result["precision"],
+            "recall": result["recall"],
+            "f1": result["f1"],
+            "similarities": result["similarities"],
+            "summary_tokens": summary_tokens,
+            "source_tokens": source_tokens
+        }
 
-    def score_batch(self, summaries: Union[List[str], List[List[str]]], sources: Union[List[str], List[List[str]]], additional_output: bool):
+    def score_batch(self, summaries: Union[List[str], List[List[str]]], sources: Union[List[str], List[List[str]]]) -> List[BERTScoreResult]:
         """
         Calculate BERTScore for a batch of summaries and their corresponding source documents.
         :param summaries: batch of summary documents (List[str]) [If BERTScoreMethod.DOC] or batch of summary documents with sentences (List[List[str]]) [If BERTScoreMethod.SENT]
         :param sources: batch of source documents (List[str]) [If BERTScoreMethod.DOC] or batch of source documents with sentences (List[List[str]]) [If BERTScoreMethod.SENT]
-        :param additional_output: output additional information or just {self.variant}
-        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens} [If additional_output], {self.variant} [else]
+        :return: {precision, recall, f1, similarities, summary_tokens, source_tokens}
         """
         if self.method == BERTScoreMethod.DOC:
-            return self.__score_batch_document(summaries, sources, additional_output)
+            return self.__score_batch_document(summaries, sources)
         if self.method == BERTScoreMethod.SENT:
-            return self.__score_batch_sentences(summaries, sources, additional_output)
+            return self.__score_batch_sentences(summaries, sources)
 
-    def __score_batch_document(self, summaries: List[str], sources: List[str], additional_output: bool):
+    def __score_batch_document(self, summaries: List[str], sources: List[str]) -> List[BERTScoreResult]:
         """
         Calculate BERTScore for batches of summaries and sources (a document is expected to be a simple string)
         Documents longer than 512 tokens (depending on the model) are truncated.
         :param summaries: list of summary documents / texts
         :param sources: list of source documents / texts
-        :param additional_output: output additional information or just {self.variant}
-        :return: List of {precision, recall, f1, similarities, summary_tokens, source_tokens} [If additional_output], List of {self.variant} [else]
+        :return: List of {precision, recall, f1, similarities, summary_tokens, source_tokens}
         """
         assert len(summaries) == len(sources)
 
         dataloader = DataLoader(SummarizationDataset(summaries, sources), batch_size=32, shuffle=False)
 
-        results = {}
+        results: List[BERTScoreResult] = []
         for batch in tqdm(dataloader,  desc="Calculating bertscore..."):
             batch_summaries = batch["summaries"]
             batch_sources = batch["sources"]
@@ -134,15 +146,18 @@ class BERTScore(SimilarityMetricInterface):
 
             # compare summary and source pairwise
             for summary_embeddings, source_embeddings, summary_tokens, source_tokens in zip(summaries_embeddings, sources_embeddings, summaries_tokens, sources_tokens):
-                result = self.__calc_bertscore(summary_embeddings, source_embeddings, additional_output)
-                for key, value in result.items():
-                    results[key] = [*results.get(key, []), value]
-                if additional_output:
-                    results["summary_tokens"] = [*results.get("summary_tokens", []), summary_tokens]
-                    results["source_tokens"] = [*results.get("source_tokens", []), source_tokens]
+                result = BERTScore.__calc_bertscore(summary_embeddings, source_embeddings)
+                results.append({
+                    "precision": result["precision"],
+                    "recall": result["recall"],
+                    "f1": result["f1"],
+                    "similarities": result["similarities"],
+                    "summary_tokens": summary_tokens,
+                    "source_tokens": source_tokens
+                })
         return results
 
-    def __score_batch_sentences(self, summaries_sentences: List[List[str]], sources_sentences: List[List[str]], additional_output: bool):
+    def __score_batch_sentences(self, summaries_sentences: List[List[str]], sources_sentences: List[List[str]]) -> List[BERTScoreResult]:
         """
         Calculate BERTScore for batches of summaries and sources, consisting of multiple sentences:
         1. summaries and sources are split into chunks / batches to save resources
@@ -152,8 +167,7 @@ class BERTScore(SimilarityMetricInterface):
         Sentences longer than 512 tokens (depending on the model) are truncated.
         :param summaries_sentences: batch of summaries containing of lists of sentences
         :param sources_sentences: batch of sources containing of lists of sentences
-        :param additional_output: output additional information or just {self.variant}
-        :return: List of {precision, recall, f1, similarities, summary_tokens, source_tokens} [If additional_output], List of {self.variant} [else]
+        :return: List of {precision, recall, f1, similarities, summary_tokens, source_tokens}
         """
         assert len(summaries_sentences) == len(sources_sentences)
 
@@ -161,7 +175,7 @@ class BERTScore(SimilarityMetricInterface):
         sum_batches = [summaries_sentences[x:x + bs] for x in range(0, len(summaries_sentences), bs)]
         src_batches = [sources_sentences[x:x + bs] for x in range(0, len(sources_sentences), bs)]
 
-        results = {}
+        results: List[BERTScoreResult] = []
         for sum_batch, src_batch in tqdm(zip(sum_batches, src_batches),  desc="Calculating bertscore..."):
             # todo: refactor
             all_summaries_sentences = []
@@ -181,17 +195,20 @@ class BERTScore(SimilarityMetricInterface):
 
             # compare summary and source pairwise
             for summary_embeddings, source_embeddings, summary_tokens, source_tokens in zip(summaries_embeddings, sources_embeddings, summaries_tokens, sources_tokens):
-                result = self.__calc_bertscore(summary_embeddings, source_embeddings, additional_output)
-                for key, value in result.items():
-                    results[key] = [*results.get(key, []), value]
-                if additional_output:
-                    results["summary_tokens"] = [*results.get("summary_tokens", []), summary_tokens]
-                    results["source_tokens"] = [*results.get("source_tokens", []), source_tokens]
+                result = BERTScore.__calc_bertscore(summary_embeddings, source_embeddings)
+                results.append({
+                    "precision": result["precision"],
+                    "recall": result["recall"],
+                    "f1": result["f1"],
+                    "similarities": result["similarities"],
+                    "summary_tokens": summary_tokens,
+                    "source_tokens": source_tokens
+                })
         return results
 
-    def align_and_score(self, summary_texts: List[str], source_texts: List[str]):
+    def align_and_score(self, summary_texts: List[str], source_texts: List[str]) -> AlignScoreResult:
         """
-        Calculate a similarity metric for provided texts (phrases, sentences...) using self.variant of BERTSCore.
+        Calculate a similarity metric for provided texts (phrases, sentences...).
         The texts are aligned using the maximum similarities. (e.g. [1, 3]: summary 0 -> source 1, summary1 -> source 3)
         Precision, recall and f1 are computed for the similarity matrix.
         Texts longer than 512 tokens (depending on the model) are truncated.
@@ -200,7 +217,15 @@ class BERTScore(SimilarityMetricInterface):
         :return: [precision, recall, f1, summary_source_alignment, similarities]
         """
         if len(summary_texts) == 0 or len(source_texts) == 0:
-            return {"precision": 0.0, "recall": 0.0, "f1": 0.0, "alignment": [], "similarities": []}
+            return {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "summary_source_alignment": [],
+                "source_summary_alignment": [],
+                "summary_source_similarities": [],
+                "source_summary_similarities": []
+            }
 
         summaries_embeddings, summaries_tokens = self.__embed_batch(summary_texts)
         sources_embeddings, sources_tokens = self.__embed_batch(source_texts)
@@ -208,37 +233,42 @@ class BERTScore(SimilarityMetricInterface):
         # calculate a bertscore similarity matrix
         # that compares every summary and source <sentence, phrase, text...>
         similarities = torch.tensor(
-            [[self.__calc_bertscore(summary_embeddings, source_embeddings, False)[self.variant.value]  # use f1 bertscore
+            [[BERTScore.__calc_bertscore(summary_embeddings, source_embeddings)["f1"]  # use f1 bertscore
               for source_embeddings in sources_embeddings]
              for summary_embeddings in summaries_embeddings])
 
         summary_source_alignment = similarities.argmax(dim=1).tolist()
-        # source_summary_alignment = similarities.argmax(dim=0).tolist()
-        precision, recall, f1 = calc_prf1(similarities)
+        source_summary_alignment = similarities.argmax(dim=0).tolist()
+
+        # compute scores
+        prf1 = calc_prf1(similarities)
 
         return {
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-            "alignment": summary_source_alignment,
-            "similarities": similarities.tolist()
+            "precision": prf1["precision"],
+            "recall": prf1["recall"],
+            "f1": prf1["f1"],
+            "summary_source_alignment": summary_source_alignment,
+            "source_summary_alignment": source_summary_alignment,
+            "summary_source_similarities": similarities.tolist(),
+            "source_summary_similarities": similarities.T.tolist(),
         }
 
-    def __calc_bertscore(self, summary_embeddings: Tensor, source_embeddings: Tensor, additional_output: bool):
+    @staticmethod
+    def __calc_bertscore(summary_embeddings: Tensor, source_embeddings: Tensor) -> PRF1SimResult:
         """
         Calculates BERTScore, given the token embeddings (2D Tensors of shape [#tokens, #embedding_dims] of two texts
         :param summary_embeddings: token embeddings of text1
         :param source_embeddings: token embeddings of text2
-        :param additional_output: output precision, recall, f1, similarity matrix or just self.variant (default f1)
-        :return: {precision, recall, f1, similarities} [If additional_output] else {self.variant}
+        :return: {precision, recall, f1, similarities}
         """
         similarities = summary_embeddings.mm(source_embeddings.T)
-        result = calc_prf1(similarities, named=True)
-        if additional_output:
-            result["similarities"] = similarities.tolist()
-            return result
-        else:
-            return {self.variant.value: result[self.variant.value]}
+        result = calc_prf1(similarities)
+        return {
+            "precision": result["precision"],
+            "recall": result["recall"],
+            "f1": result["f1"],
+            "similarities": similarities.tolist()
+        }
 
     def __embed(self, text: str):
         """

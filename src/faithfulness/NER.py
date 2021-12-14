@@ -1,73 +1,68 @@
-from typing import List
-
+from typing import List, TypedDict, Dict, Type
 import spacy
 import numpy as np
-
+from faithfulness.interfaces.FaithfulnessInput import FaithfulnessInput
 from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from tqdm import tqdm
 
-from faithfulness.utils.utils import MetricVariant
+from faithfulness.interfaces.UsesSimilarityMetricInterface import UsesSimilarityMetricInterface
+from faithfulness.types.GroupedAlignScoreResult import GroupedAlignScoreResult
 
 
-class NER(MetricInterface):
+class Entity(TypedDict):
+    text: str
+    label: str
+    start: int
+    end: int
 
-    def __init__(self, metric: SimilarityMetricInterface, spacymodel='en_core_web_lg', metric_variant=MetricVariant.F1, ner_variant=MetricVariant.F1):
+
+class NERResult(GroupedAlignScoreResult):
+    summary_entities:  Dict[str, List[Entity]]
+    source_entities:  Dict[str, List[Entity]]
+
+
+class NER(MetricInterface, UsesSimilarityMetricInterface):
+
+    def __init__(self, metric: Type[SimilarityMetricInterface], metric_args=None, spacymodel='en_core_web_lg'):
+        super(NER, self).__init__(metric, metric_args)
         print(f'Loading Spacy model {spacymodel}...')
         self.nlp = spacy.load(spacymodel)
-        self.metric = metric
-        self.metric_variant = metric_variant
-        self.ner_variant = ner_variant
+        self.load_metric()
 
-    def score(self, summary_text: str, source_text: str, additional_output: bool):
+    @staticmethod
+    def needs_input() -> FaithfulnessInput:
+        return FaithfulnessInput.DOCUMENT
+
+    def score(self, summary_text: str, source_text: str) -> NERResult:
         # extract entities
         summary_entities = self.__extract_entities(summary_text)
         source_entities = self.__extract_entities(source_text)
 
-        result = {}
-        if additional_output:
-            result["summary_entities"] = summary_entities
-            result["source_entities"] = source_entities
+        # find common entities labels
+        common_tags = set.intersection(set(summary_entities.keys()), set(source_entities.keys()))
+        # missing_tags = set(summary_entities.keys()).difference(set(source_entities.keys()))
 
-        if self.ner_variant == MetricVariant.F1:
-            summary_source_result = self.__calc_score(summary_entities, summary_entities, source_entities, additional_output)
-            source_summary_result = self.__calc_score(source_entities, source_entities, summary_entities, additional_output)
+        tmp = self.__calc_score(list(common_tags), summary_entities, source_entities)
+        return {
+            "precision": tmp["precision"],
+            "recall": tmp["recall"],
+            "f1": tmp["f1"],
+            "summary_source_alignment": tmp["summary_source_alignment"],
+            "source_summary_alignment": tmp["source_summary_alignment"],
+            "summary_source_similarities": tmp["summary_source_similarities"],
+            "source_summary_similarities": tmp["source_summary_similarities"],
+            "summary_entities": summary_entities,
+            "source_entities": source_entities
+        }
 
-            scores = {
-                "precision": summary_source_result[self.metric_variant.value],
-                "recall": source_summary_result[self.metric_variant.value]
-            }
+    def score_batch(self, summaries: List[str], sources: List[str]) -> List[NERResult]:
+        return [self.score(summary, source) for summary, source in tqdm(zip(summaries, sources), desc="Calculating NER...")]
 
-            scores["f1"] = 2 * ((scores["precision"] * scores["recall"]) / (scores["precision"] + scores["recall"])) if (scores["precision"] + scores["recall"]) > 0.0 else 0.0
-
-            if additional_output:
-                scores["summary_source_alignment"] = summary_source_result["alignment"]
-                scores["summary_source_similarities"] = summary_source_result["similarities"]
-                scores["source_summary_alignment"] = source_summary_result["alignment"]
-                scores["source_summary_similarities"] = source_summary_result["similarities"]
-                result.update(scores)
-            else:
-                result.update({self.ner_variant.value: scores[self.ner_variant.value]})
-
-        elif self.ner_variant == MetricVariant.PRECISION:
-            result.update(self.__calc_score(summary_entities, summary_entities, source_entities, additional_output))
-        elif self.ner_variant == MetricVariant.RECALL:
-            result.update(self.__calc_score(source_entities, summary_entities, source_entities, additional_output))
-
-        return result
-
-    def score_batch(self, summaries: List[str], sources: List[str], additional_output):
-        results = {}
-        for summary, source in tqdm(zip(summaries, sources), desc="Calculating NER..."):
-            result = self.score(summary, source, additional_output)
-            for key, value in result.items():
-                results[key] = [*results.get(key, []), value]
-        return results
-
-    def __extract_entities(self, text):
+    def __extract_entities(self, text) -> Dict[str, List[Entity]]:
         temp = self.nlp(text)
 
-        result = {}
+        result: Dict[str, List[Entity]] = {}
         for ent in temp.ents:
             label = ent.label_
             if label not in result.keys():
@@ -76,27 +71,35 @@ class NER(MetricInterface):
 
         return result
 
-    def __calc_score(self, entities, summary_entities, source_entities, additional_output: bool):
-        results = {}
-        for ner_label in entities.keys():
+    def __calc_score(self, entities: List[str], summary_entities: Dict[str, List[Entity]], source_entities: Dict[str, List[Entity]]) -> GroupedAlignScoreResult:
+        results: GroupedAlignScoreResult = {}
+        for ner_label in entities:
             summary_ners = [x['text'] for x in summary_entities.get(ner_label, [])]
             source_ners = [x['text'] for x in source_entities.get(ner_label, [])]
             result = self.metric.align_and_score(summary_ners, source_ners)
             for key, value in result.items():
-                if key == self.metric_variant.value:
-                    results[self.metric_variant.value] = [*results.get(self.metric_variant.value, []), value]
-                elif additional_output and key in ["alignment", "similarities"]:
+                if key in ["precision", "recall", "f1"]:
+                    results[key] = [*results.get(key, []), value]
+                else:  # key in ["summary_source_alignment", "source_summary_alignment", "summary_source_similarities", "source_summary_similarities"
                     if key not in results:
                         results[key] = {}
                     results[key][ner_label] = value
 
         # if a summary has no named entities, we assume it is faithful!
-        if len(entities.keys()) == 0:
-            results[self.metric_variant.value] = 1.0
-            if additional_output:
-                results["alignment"] = {}
-                results["similarities"] = {}
+        if len(entities) == 0:
+            results["precision"] = 1.0
+            results["recall"] = 1.0
+            results["f1"] = 1.0
+            results["summary_source_alignment"] = {}
+            results["source_summary_alignment"] = {}
+            results["summary_source_similarities"] = {}
+            results["source_summary_similarities"] = {}
             return results
 
-        results[self.metric_variant.value] = np.array(results[self.metric_variant.value]).mean().item()
+        # we keep summary / source alignments and similarities grouped by entity label
+        # but we aggregate (calculate mean) of the precisions recalls and f1s
+        results["precision"] = np.array(results["precision"]).mean().item()
+        results["recall"] = np.array(results["recall"]).mean().item()
+        results["f1"] = np.array(results["f1"]).mean().item()
+
         return results
