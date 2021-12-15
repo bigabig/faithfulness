@@ -5,6 +5,8 @@ import re
 import string
 from enum import Enum
 from typing import TypedDict
+import pandas as pd
+from pandas import DataFrame
 
 
 class F1Result(TypedDict):
@@ -72,6 +74,25 @@ def load_data(path):
 
 def save_data(data, path):
     pickle.dump(data, open(path, "wb"))
+
+
+def load_csv_data(data_path: pathlib.Path) -> DataFrame:
+    if not data_path.exists():
+        print(f"ERROR: Path {data_path} does not exist!")
+        exit()
+
+    if not data_path.is_file() or data_path.suffix != ".csv":
+        print(f"ERROR: Path {data_path} does not point to a .sv file!")
+        exit()
+
+    with data_path.open(encoding="UTF-8", mode="r") as file:
+        df = pd.read_csv(file)
+
+    if df is None or len(df) <= 0:
+        print(f"ERROR: Data loading failed! (1)")
+        exit()
+
+    return df
 
 
 def load_json_data(data_path: pathlib.Path, examples: int = -1):

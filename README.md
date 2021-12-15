@@ -64,6 +64,15 @@ prepared_dataset.json
 }, ...]
 ```
 
+You can convert .csv files to the required format using Experimentor.prepare_dataset(). This function uses the spacy model "en_core_web_lg" to perform sentence splitting and requires a csv file with summary, source and faithfulness keys:
+```
+dataset.csv:
+summary,source,faithfulness
+"summary text","source text",0.9
+
+Experimentor.prepare_dataset(Path("dataset.csv"))
+```
+
 You can now use the experimentor:
 ```
 output_path=Path("./experiments/dataset/qgqa"

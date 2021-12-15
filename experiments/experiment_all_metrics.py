@@ -1,5 +1,4 @@
 from pathlib import Path
-
 from faithfulness.Baseline import Baseline, BaselineMethod
 from faithfulness.Entailment import Entailment, EntailmentMethod
 from faithfulness.BERTScore import BERTScore, BERTScoreMethod

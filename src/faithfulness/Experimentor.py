@@ -1,8 +1,9 @@
 import json
 import csv
 import pathlib
-from builtins import map
 from typing import List, Union
+from tqdm import tqdm
+import spacy
 from faithfulness.BERTScore import BERTScore, BERTScoreResult
 from faithfulness.Baseline import Baseline
 from faithfulness.Entailment import Entailment, EntailmentResult, is_EntailmentResult
@@ -14,7 +15,7 @@ from faithfulness.SentSim import SentSim
 from faithfulness.types.AlignScoreResult import AlignScoreResult
 from faithfulness.interfaces.FaithfulnessInput import FaithfulnessInput
 from faithfulness.utils.correlation import pearson, spearman
-from faithfulness.utils.utils import ensure_dir_exists, PRF1Result, load_json_data
+from faithfulness.utils.utils import ensure_dir_exists, PRF1Result, load_json_data, load_csv_data
 
 
 class Experimentor:
@@ -199,3 +200,25 @@ class Experimentor:
         if self.experiment_input is None:
             print(f"ERROR: Data loading failed! (2)")
             exit()
+
+    @staticmethod
+    def prepare_dataset(file_path: pathlib.Path):
+        print("loading input file...")
+        df = load_csv_data(file_path)
+
+        spacymodel = 'en_core_web_lg'
+        print(f'Loading Spacy model {spacymodel}...')
+        nlp = spacy.load(spacymodel)
+
+        output = [{
+            "source": source,
+            "summary": summary,
+            "faithfulness": faithfulness,
+            "summary_sentences": [x.text for x in nlp(summary).sents],
+            "source_sentences": [x.text for x in nlp(source).sents]
+        } for summary, source, faithfulness in tqdm(zip(df["summary"].tolist(), df["source"].tolist(), df["faithfulness"].tolist()), desc="Processing data...")]
+
+        # Save output
+        out_file = file_path.with_name("prepared_" + file_path.name.replace(".csv", ".json"))
+        with out_file.open(encoding="UTF-8", mode="w") as file:
+            json.dump(output, file)
