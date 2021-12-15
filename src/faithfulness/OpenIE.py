@@ -14,7 +14,6 @@ from faithfulness.types.AlignScoreResult import AlignScoreResult
 from faithfulness.utils.representation_utils import Phrase
 from faithfulness.utils.utils import load_data, save_data, ensure_dir_exists
 from tqdm import tqdm
-import sympy
 
 
 class Triple(TypedDict):
@@ -159,14 +158,6 @@ class OpenIE(MetricInterface, UsesSimilarityMetricInterface):
             })
 
         return results
-
-    @staticmethod
-    def __find_groups(frames):
-        intervals = [sympy.Interval(x.beginIndex, x.endIndex) for x in frames]
-        u = sympy.Union(*intervals)
-        groups = [u] if isinstance(u, sympy.Interval) else list(u.args)
-
-        return groups
 
     def __get_triples(self, text) -> (List[Triple], List[str]):
         if len(text) > 5000:
