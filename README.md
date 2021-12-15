@@ -29,7 +29,8 @@ from faithfulness.QGQA import QGQA
 qgqa = QGQA()
 summary = "Lorem ipsum dolor sit amet"
 source = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam ..."
-faithfulness, info = qgqa.score(summary, source)
+result: QGQAResult = qgqa.score(summary, source)
+print(f"Faithfulness: {result["f1"]}")
 ```
 
 More examples can be found [here 💯](https://github.com/bigabig/faithfulness/examples/).
@@ -48,6 +49,33 @@ You will soon be able to read more about the evaluation in our paper. ([Master's
 | QGQA       | 0.228       | 0.258        |
 | OpenIE     | 0.169       | 0.185        |
 
+### Reproduce results & evaluate custom dataset
+You can download the preprocessed XSUM dataset [here](https://data.bigabig.de/prepared_xsum.json) and the preprocessed Summeval dataset [here](https://data.bigabig.de/prepared_summeval.json) to reproduce the above results.
+To evaluate the faithfulness metrics on other datasets, we recommend using the provided Experimentor class. For this, your dataset has to be in the following JSON format:
+
+prepared_dataset.json
+```
+[{
+    "summary": "the summary text..."
+    "source": "the source text..."
+    "summary_sentences": ["summary sentence 1", "summary sentence 2", ...] 
+    "source_sentences": ["source sentence 1", "source sentence 2", ...] 
+    "faithfulness": 0.0 - 1.0
+}, ...]
+```
+
+You can now use the experimentor:
+```
+output_path=Path("./experiments/dataset/qgqa"
+faithfulness_metric = QGQA(metric=BERTScore, save_path=output_path, batch_mode=True)
+Experimentor(data_path=Path("./prepared_dataset.json"),
+             out_path=output_path),
+             metric=faithfulness_metric,
+             experiment_name="qgqa_bertscore").experiment()
+```
+In the above example, correlations are written to /experiments/dataset/qgqa/qgqa_bertscore.csv
+
+
 ## Dependencies 🔗
 
 By running `$ pip install faithfulness` you will install this library as well as the following dependencies:
@@ -58,7 +86,7 @@ By running `$ pip install faithfulness` you will install this library as well as
 - [SentenceTransformers](https://www.sbert.net/) (used for NER, OpenIE, QGQA, SentSim, SRL)
 
 ## Troubleshooting 🛠
-There are currently problems when installing allennlp and jsonnet. If you encounter "_Building wheel for jsonnet (setup.py) ... error_" during the installation please try:
+There are currently problems when installing allennlp and jsonnet. If you encounter "Building wheel for jsonnet (setup.py) ... error_" during the installation please try:
 ```
 apt-get install make 
 apt-get install g++ 
