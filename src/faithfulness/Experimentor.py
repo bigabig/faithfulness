@@ -26,6 +26,8 @@ class Experimentor:
                  data_summary_sentences_key="summary_sentences",
                  data_source_sentences_key="source_sentences",
                  examples=-1,
+                 prediction_threshold=0.5,
+                 gold_threshold=0.5,
                  scale=True):
 
         self.data_path = data_path
@@ -34,6 +36,7 @@ class Experimentor:
         ensure_dir_exists(out_path)
         self.out_file_json = out_path / (experiment_name + ".json")
         self.out_file_csv = out_path / (experiment_name + ".csv")
+        self.out_file_csv_binary = out_path / (experiment_name + "_binary.csv")
 
         self.metric = metric
         self.experiment_name = experiment_name
@@ -46,6 +49,9 @@ class Experimentor:
         self.data_source_key = data_source_key
         self.data_summary_sentences_key = data_summary_sentences_key
         self.data_source_sentences_key = data_source_sentences_key
+
+        self.prediction_threshold = prediction_threshold
+        self.gold_threshold = gold_threshold
 
     def experiment(self):
         self.__load_experiment_data()
@@ -153,30 +159,16 @@ class Experimentor:
                 scores = [x[score] for x in self.data]
                 min_score = min(scores)
                 max_score = max(scores)
-                print(f"Scacling from {min_score} - {max_score} to 0 - 1")
-                for x in self.data:
-                    print(f"Before: {x[score]}")
-                    x[score] = (x[score] - min_score) / (max_score - min_score)
-                    print(f"After: {x[score]}")
+                if (max_score - min_score) > 0.0:
+                    for x in self.data:
+                        x[score] = (x[score] - min_score) / (max_score - min_score)
 
         # Save results as json file
         with self.out_file_json.open(encoding="UTF-8", mode="w") as file:
             json.dump(self.data, file, default=lambda a: a.__dict__)
 
-        # calculate correlation
-        self.correlation()
-
     def correlation(self):
-        data = load_json_data(self.out_file_json)
-
-        # check that precsion, recall f1 exists
-        tmp = data[0]
-        if "precision" not in tmp or "recall" not in tmp or "f1" not in tmp:
-            print("ERROR: no results for precision, recall and f1")
-            exit()
-
-        # Read data
-        precisions, recalls, f1s, faithfulness = zip(*[(x["precision"], x["recall"], x["f1"], x[self.data_faithfulness_key]) for x in data])
+        precisions, recalls, f1s, faithfulness = self.__load_evaluation_data()
 
         # Calculate correlation
         table = [["Method", "Pearson", "Spearman"]]
@@ -188,6 +180,45 @@ class Experimentor:
         with self.out_file_csv.open(encoding="UTF-8", mode="w") as file:
             writer = csv.writer(file)
             writer.writerows(table)
+
+    def binary_evaluation(self):
+        precisions, recalls, f1s, faithfulness = self.__load_evaluation_data()
+
+        # convert to binary predictions
+        faithfulness = [x > self.gold_threshold for x in faithfulness]
+
+        recalls = [x > self.prediction_threshold for x in recalls]
+        f1s = [x > self.prediction_threshold for x in f1s]
+
+        # calculate accuracy
+        table = [["Method", "Accuracy"]]
+        for scores, label in zip([precisions, recalls, f1s], ["_precision", "_recall", "_f1"]):
+            # convert to binary predictions
+            binary_scores = [x > self.prediction_threshold for x in scores]
+
+            # calculate accuracy
+            accuracy = sum([1.0 if pred == gold else 0.0 for pred, gold in zip(binary_scores, faithfulness)]) / float(len(binary_scores))
+
+            # write to table
+            table.append([self.experiment_name + label, accuracy])
+
+        # Save accuracies as csv file
+        with self.out_file_csv_binary.open(encoding="UTF-8", mode="w") as file:
+            writer = csv.writer(file)
+            writer.writerows(table)
+
+    def __load_evaluation_data(self):
+        data = load_json_data(self.out_file_json)
+
+        # check that precsion, recall f1 exists
+        tmp = data[0]
+        if "precision" not in tmp or "recall" not in tmp or "f1" not in tmp:
+            print("ERROR: no results for precision, recall and f1")
+            exit()
+
+        # Read data
+        precisions, recalls, f1s, faithfulness = zip(*[(x["precision"], x["recall"], x["f1"], x[self.data_faithfulness_key]) for x in data])
+        return precisions, recalls, f1s, faithfulness
 
     def __load_experiment_data(self):
         self.data = load_json_data(self.data_path, self.examples)

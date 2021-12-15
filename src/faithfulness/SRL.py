@@ -44,7 +44,7 @@ class SRLResult(SRLIntermediateResult):
 
 class SRL(MetricInterface, UsesSimilarityMetricInterface):
 
-    def __init__(self, save_path: pathlib.Path, metric: Type[SimilarityMetricInterface], metric_args=None, model_path="../../models/structured-prediction-srl-bert.2020.12.15.tar.gz", batch_mode=False):
+    def __init__(self, save_path: pathlib.Path, metric: Type[SimilarityMetricInterface], metric_args=None, model_path="../models/structured-prediction-srl-bert.2020.12.15.tar.gz", batch_mode=False):
         super(SRL, self).__init__(metric=metric, metric_args=metric_args)
         self.device = 0 if torch.cuda.is_available() else -1
 
