@@ -1,4 +1,5 @@
 import pathlib
+from enum import Enum
 from typing import List, Type, Dict
 import torch
 from allennlp.predictors.predictor import Predictor
@@ -42,14 +43,21 @@ class SRLResult(SRLIntermediateResult):
     source_sentences: List[str]
 
 
+class SRLMethod(Enum):
+    GROUPS = 1
+    NO_GROUPS = 2
+
+
 class SRL(MetricInterface, UsesSimilarityMetricInterface):
 
-    def __init__(self, save_path: pathlib.Path, metric: Type[SimilarityMetricInterface], metric_args=None, model_path="../models/structured-prediction-srl-bert.2020.12.15.tar.gz", batch_mode=False):
+    def __init__(self, save_path: pathlib.Path, metric: Type[SimilarityMetricInterface], metric_args=None, method=SRLMethod.GROUPS, model_path="../models/structured-prediction-srl-bert.2020.12.15.tar.gz", batch_mode=False):
         super(SRL, self).__init__(metric=metric, metric_args=metric_args)
         self.device = 0 if torch.cuda.is_available() else -1
 
         self.save_path = save_path
         ensure_dir_exists(save_path)
+
+        self.method: SRLMethod = method
 
         self.model_path = model_path
         self.batch_mode = batch_mode
@@ -122,6 +130,19 @@ class SRL(MetricInterface, UsesSimilarityMetricInterface):
         return results
 
     def __calc_score(self, summary_phrases: Dict[str, List[SRLPhrase]], source_phrases: Dict[str, List[SRLPhrase]]) -> SRLIntermediateResult:
+        # use different groups if method = SRLMethod.GROUPS
+        # use only one group (which is effectively, no groups at all) if method == SRLMethod.NO_GROUPS
+        if self.method == SRLMethod.NO_GROUPS:
+            all_summary_phrases = []
+            for phrases in summary_phrases.values():
+                all_summary_phrases.extend(phrases)
+            summary_phrases = {"all": all_summary_phrases}
+
+            all_source_phrases = []
+            for phrases in source_phrases.values():
+                all_source_phrases.extend(phrases)
+            source_phrases = {"all": all_source_phrases}
+
         # Find common and missing tags
         common_tags = set.intersection(set(summary_phrases.keys()), set(source_phrases.keys()))
         missing_tags = set(summary_phrases.keys()).difference(set(source_phrases.keys()))
