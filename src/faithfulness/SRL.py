@@ -165,7 +165,7 @@ class SRL(MetricInterface, UsesSimilarityMetricInterface):
 
         # average scores
         for score_label in ["precision", "recall", "f1"]:
-            if len(results[score_label]) > 0:
+            if score_label in results and len(results[score_label]) > 0:
                 results[score_label] = sum(results[score_label]) / len(results[score_label])
             else:
                 results[score_label] = 0.0
