@@ -1,6 +1,5 @@
 from typing import List
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 from faithfulness.types.AlignScoreResult import AlignScoreResult
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from faithfulness.utils.Datasets import SummarizationDataset
@@ -30,7 +29,7 @@ class SentCos(SimilarityMetricInterface):
         dataloader = DataLoader(SummarizationDataset(summaries, sources), batch_size=self.batch_size, shuffle=False)
 
         results: List[F1Result] = []
-        for batch in tqdm(dataloader,  desc="Calculating SentCos..."):
+        for batch in dataloader:
             batch_summaries = batch["summaries"]
             batch_sources = batch["sources"]
 

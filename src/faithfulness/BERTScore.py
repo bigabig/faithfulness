@@ -30,7 +30,7 @@ class BERTScoreMethod(Enum):
 
 class BERTScore(SimilarityMetricInterface):
 
-    def __init__(self, modelname="roberta-large-mnli", layer=8, method=BERTScoreMethod.DOC, batch_size=2):
+    def __init__(self, modelname="roberta-large-mnli", layer=8, method=BERTScoreMethod.DOC, batch_size=2, show_tqdm=False):
         """
         Evaluate summaries and sources using BERTScore
         :param modelname: this model calculates token embeddings
@@ -51,6 +51,7 @@ class BERTScore(SimilarityMetricInterface):
         self.device = device
         self.method = method
         self.batch_size = batch_size
+        self.show_tqdm = show_tqdm
 
     def needs_input(self) -> FaithfulnessInput:
         return FaithfulnessInput.SENTENCE if self.method == BERTScoreMethod.SENT else FaithfulnessInput.DOCUMENT
@@ -138,7 +139,8 @@ class BERTScore(SimilarityMetricInterface):
         dataloader = DataLoader(SummarizationDataset(summaries, sources), batch_size=32, shuffle=False)
 
         results: List[BERTScoreResult] = []
-        for batch in tqdm(dataloader,  desc="Calculating bertscore..."):
+        tqdm_args = {"desc": "Calculating bertscore..."} if self.show_tqdm else {}
+        for batch in tqdm(dataloader, *tqdm_args):
             batch_summaries = batch["summaries"]
             batch_sources = batch["sources"]
             summaries_embeddings, summaries_tokens = self.__embed_batch(batch_summaries)
@@ -176,8 +178,8 @@ class BERTScore(SimilarityMetricInterface):
         src_batches = [sources_sentences[x:x + bs] for x in range(0, len(sources_sentences), bs)]
 
         results: List[BERTScoreResult] = []
-        for sum_batch, src_batch in tqdm(zip(sum_batches, src_batches),  desc="Calculating bertscore..."):
-            # todo: refactor
+        tqdm_args = {"desc": "Calculating bertscore..."} if self.show_tqdm else {}
+        for sum_batch, src_batch in tqdm(zip(sum_batches, src_batches),  *tqdm_args):
             all_summaries_sentences = []
             ids_summaries_sentences = []
             for idx, x in enumerate(sum_batch):
