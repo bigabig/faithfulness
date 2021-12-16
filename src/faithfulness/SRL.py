@@ -7,8 +7,9 @@ from faithfulness.interfaces.FaithfulnessInput import FaithfulnessInput
 from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from faithfulness.interfaces.UsesSimilarityMetricInterface import UsesSimilarityMetricInterface
+from faithfulness.types.AlignScoreResult import AlignScoreResult
 from faithfulness.types.GroupedAlignScoreResult import GroupedAlignScoreResult
-from faithfulness.utils.utils import load_data, save_data, ensure_dir_exists
+from faithfulness.utils.utils import load_data, save_data, ensure_dir_exists, PRF1Result
 from tqdm import tqdm
 
 
@@ -142,6 +143,20 @@ class SRL(MetricInterface, UsesSimilarityMetricInterface):
             for phrases in source_phrases.values():
                 all_source_phrases.extend(phrases)
             source_phrases = {"all": all_source_phrases}
+
+        # return default result, if no phrases and no sources
+        if len(summary_phrases) == 0 or len(source_phrases) == 0:
+            return {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "summary_source_alignment": {},
+                "source_summary_alignment": {},
+                "summary_source_similarities": {},
+                "source_summary_similarities": {},
+                "summary_phrases": summary_phrases,
+                "source_phrases": source_phrases
+            }
 
         # Find common and missing tags
         common_tags = set.intersection(set(summary_phrases.keys()), set(source_phrases.keys()))

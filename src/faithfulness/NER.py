@@ -73,17 +73,6 @@ class NER(MetricInterface, UsesSimilarityMetricInterface):
 
     def __calc_score(self, entities: List[str], summary_entities: Dict[str, List[Entity]], source_entities: Dict[str, List[Entity]]) -> GroupedAlignScoreResult:
         results: GroupedAlignScoreResult = {}
-        for ner_label in entities:
-            summary_ners = [x['text'] for x in summary_entities.get(ner_label, [])]
-            source_ners = [x['text'] for x in source_entities.get(ner_label, [])]
-            result = self.metric.align_and_score(summary_ners, source_ners)
-            for key, value in result.items():
-                if key in ["precision", "recall", "f1"]:
-                    results[key] = [*results.get(key, []), value]
-                else:  # key in ["summary_source_alignment", "source_summary_alignment", "summary_source_similarities", "source_summary_similarities"
-                    if key not in results:
-                        results[key] = {}
-                    results[key][ner_label] = value
 
         # if a summary has no named entities, we assume it is faithful!
         if len(entities) == 0:
@@ -95,6 +84,18 @@ class NER(MetricInterface, UsesSimilarityMetricInterface):
             results["summary_source_similarities"] = {}
             results["source_summary_similarities"] = {}
             return results
+
+        for ner_label in entities:
+            summary_ners = [x['text'] for x in summary_entities.get(ner_label, [])]
+            source_ners = [x['text'] for x in source_entities.get(ner_label, [])]
+            result = self.metric.align_and_score(summary_ners, source_ners)
+            for key, value in result.items():
+                if key in ["precision", "recall", "f1"]:
+                    results[key] = [*results.get(key, []), value]
+                else:  # key in ["summary_source_alignment", "source_summary_alignment", "summary_source_similarities", "source_summary_similarities"
+                    if key not in results:
+                        results[key] = {}
+                    results[key][ner_label] = value
 
         # we keep summary / source alignments and similarities grouped by entity label
         # but we aggregate (calculate mean) of the precisions recalls and f1s

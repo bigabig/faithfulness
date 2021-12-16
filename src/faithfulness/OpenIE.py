@@ -279,6 +279,19 @@ class OpenIE(MetricInterface, UsesSimilarityMetricInterface):
         return filtered_triples
 
     def __calc_score(self, summary_triples: List[Triple], source_triples: List[Triple]) -> AlignScoreResultWithTriples:
+        if len(summary_triples) == 0 or len(source_triples) == 0:
+            return {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "summary_source_alignment": [],
+                "source_summary_alignment": [],
+                "summary_source_similarities": [],
+                "source_summary_similarities": [],
+                "source_triples": source_triples,
+                "summary_triples": summary_triples
+            }
+
         summary_triple_sentences = [triple["text"] for triple in summary_triples]
         source_triple_sentences = [triple["text"] for triple in source_triples]
         result = self.metric.align_and_score(summary_triple_sentences, source_triple_sentences)
