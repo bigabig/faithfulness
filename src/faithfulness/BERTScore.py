@@ -254,13 +254,21 @@ class BERTScore(SimilarityMetricInterface):
         }
 
     @staticmethod
-    def __calc_bertscore(summary_embeddings: Tensor, source_embeddings: Tensor) -> PRF1SimResult:
+    def __calc_bertscore(summary_embeddings: torch.Tensor, source_embeddings: Tensor) -> PRF1SimResult:
         """
         Calculates BERTScore, given the token embeddings (2D Tensors of shape [#tokens, #embedding_dims] of two texts
         :param summary_embeddings: token embeddings of text1
         :param source_embeddings: token embeddings of text2
         :return: {precision, recall, f1, similarities}
         """
+        if not summary_embeddings.numel() or not source_embeddings.numel():
+            return {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "similarities": []
+            }
+
         similarities = summary_embeddings.mm(source_embeddings.T)
         result = calc_prf1(similarities)
         return {
