@@ -1,3 +1,4 @@
 # Ignore experiment results
 *.json
 *.csv
+*.pkl
