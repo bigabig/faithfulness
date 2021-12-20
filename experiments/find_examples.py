@@ -1,4 +1,5 @@
 import json
+import random
 from pathlib import Path
 import numpy as np
 import torch
@@ -21,23 +22,31 @@ print(len(data))
 # calculate difference between human faithfulness & metric faithfulness judgements
 scores = np.array([x[score_key] for x in data])
 faithfulness = np.array([x["faithfulness"] for x in data])
-difference = torch.tensor(np.abs(scores - faithfulness))
+difference = torch.tensor(scores - faithfulness)
 
 # find top k best and worst examples
-good_example_ids = torch.topk(difference, k=100, largest=False).indices.tolist()
-bad_example_ids = torch.topk(difference, k=100, largest=True).indices.tolist()
+under_example_ids = torch.topk(difference, k=200, largest=False).indices.tolist()
+over_example_ids = torch.topk(difference, k=200, largest=True).indices.tolist()
+
+random_example_ids = set()
+while len(random_example_ids) < 50:
+    random_example_ids.add(random.randrange(0, len(data)))
 
 # dont take the 50 worst or 50 best
-good_example_ids = good_example_ids[50:]
-bad_example_ids = bad_example_ids[50:]
+under_example_ids = under_example_ids[150:]
+over_example_ids = over_example_ids[150:]
 
-good_examples = [data[idx] for idx in good_example_ids]
-bad_examples = [data[idx] for idx in bad_example_ids]
+under_examples = [data[idx] for idx in under_example_ids]
+over_examples = [data[idx] for idx in over_example_ids]
+random_examples = [data[idx] for idx in random_example_ids]
 
 # Write data
-out_file_good = in_file.with_name(in_file.name.replace(".json", "_examples_good.json"))
-out_file_bad = in_file.with_name(in_file.name.replace(".json", "_examples_bad.json"))
-with out_file_good.open(encoding="UTF-8", mode="w") as file:
-    json.dump(good_examples, file)
-with out_file_bad.open(encoding="UTF-8", mode="w") as file:
-    json.dump(bad_examples, file)
+out_file_under = in_file.with_name(in_file.name.replace(".json", "_examples_under.json"))
+out_file_over = in_file.with_name(in_file.name.replace(".json", "_examples_over.json"))
+out_file_random = in_file.with_name(in_file.name.replace(".json", "_examples_random.json"))
+with out_file_under.open(encoding="UTF-8", mode="w") as file:
+    json.dump(under_examples, file)
+with out_file_over.open(encoding="UTF-8", mode="w") as file:
+    json.dump(over_examples, file)
+with out_file_random.open(encoding="UTF-8", mode="w") as file:
+    json.dump(random_examples, file)
