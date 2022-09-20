@@ -1,12 +1,16 @@
+import sys
 import json
 import pathlib
 import pickle
 import re
 import string
 from enum import Enum
-from typing import TypedDict
 import pandas as pd
 from pandas import DataFrame
+if sys.version_info >= (3, 8):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict
 
 
 class F1Result(TypedDict):
