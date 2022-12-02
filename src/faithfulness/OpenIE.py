@@ -1,5 +1,5 @@
+import sys
 import pathlib
-from typing import List, Type, Dict, TypedDict, Tuple, Optional
 import torch
 from sentence_transformers import SentenceTransformer, util
 from sklearn.cluster import DBSCAN
@@ -14,6 +14,11 @@ from faithfulness.types.AlignScoreResult import AlignScoreResult
 from faithfulness.utils.representation_utils import Phrase
 from faithfulness.utils.utils import load_data, save_data, ensure_dir_exists
 from tqdm import tqdm
+from typing import List, Type, Dict, Tuple
+if sys.version_info >= (3, 8):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict
 
 
 class Triple(TypedDict):

@@ -1,10 +1,15 @@
-from typing import List, TypedDict, Dict, Type
+import sys
 import spacy
 import numpy as np
 from faithfulness.interfaces.FaithfulnessInput import FaithfulnessInput
 from faithfulness.interfaces.MetricInterface import MetricInterface
 from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricInterface
 from tqdm import tqdm
+from typing import List, Dict, Type
+if sys.version_info >= (3, 8):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict
 
 from faithfulness.interfaces.UsesSimilarityMetricInterface import UsesSimilarityMetricInterface
 from faithfulness.types.GroupedAlignScoreResult import GroupedAlignScoreResult

@@ -1,5 +1,5 @@
 import pathlib
-from typing import List, Type, Dict, TypedDict, Tuple, Optional
+import sys
 import spacy
 import torch
 from torch.utils.data import DataLoader
@@ -12,6 +12,11 @@ from faithfulness.interfaces.SimilarityMetricInterface import SimilarityMetricIn
 from faithfulness.utils.Datasets import QGDataset
 from tqdm import tqdm
 from faithfulness.utils.utils import load_data, save_data, ensure_dir_exists, is_PRF1Result, is_F1Result
+from typing import List, Type, Dict, Tuple, Optional
+if sys.version_info >= (3, 8):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict
 
 
 class AnswerCandidate(TypedDict):
